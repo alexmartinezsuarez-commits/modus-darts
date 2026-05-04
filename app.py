@@ -35,11 +35,26 @@ CORTES = {
 PESTANAS_CON_STATS = [k for k in URLS if k not in ("Value Bets",)]
 
 # ═══════════════════════════════════════════════════════════════
-# MAPEO DE JUGADORES A PAÍSES (con emojis Unicode)
+# DICCIONARIO DE EMOJIS DE BANDERAS
+# ═══════════════════════════════════════════════════════════════
+BANDERAS = {
+    "GB": "🇬🇧",
+    "NL": "🇳🇱",
+    "BE": "🇧🇪",
+    "PT": "🇵🇹",
+    "AU": "🇦🇺",
+    "DE": "🇩🇪",
+    "PL": "🇵🇱",
+    "IE": "🇮🇪",
+    "CA": "🇨🇦",
+}
+
+# ═══════════════════════════════════════════════════════════════
+# MAPEO DE JUGADORES A PAÍSES (REVISADO Y LIMPIADO)
 # ═══════════════════════════════════════════════════════════════
 JUGADORES_PAISES = {
+    # Reino Unido
     "luke littler": "GB",
-    "michael van gerwen": "NL",
     "gary anderson": "GB",
     "peter wright": "GB",
     "gerwyn price": "GB",
@@ -48,50 +63,67 @@ JUGADORES_PAISES = {
     "dave chisnall": "GB",
     "rob cross": "GB",
     "nathan aspinall": "GB",
-    "dimitri van den bergh": "BE",
-    "jose de sousa": "PT",
-    "dirk van duijvenbode": "NL",
-    "danny noppert": "NL",
     "chris dobey": "GB",
     "josh rock": "GB",
     "luke humphries": "GB",
-    "raymond van barneveld": "NL",
     "michael smith": "GB",
     "ross smith": "GB",
     "stephen bunting": "GB",
-    "damon heta": "AU",
-    "martin schindler": "DE",
-    "gabriel clemens": "DE",
     "andrew gilding": "GB",
     "brendan dolan": "GB",
-    "kim huybrechts": "BE",
     "ritchie edhouse": "GB",
     "ryan searle": "GB",
     "callan rydz": "GB",
     "joe cullen": "GB",
     "cameron menzies": "GB",
     "connor scutt": "GB",
-    "matt campbell": "CA",
-    "wessel nijman": "NL",
-    "jermaine wattimena": "NL",
-    "gian van veen": "NL",
-    "ricardo pietreczko": "DE",
-    "florian hempel": "DE",
-    "krzysztof ratajski": "PL",
-    "keane barry": "IE",
-    "william o'connor": "IE",
-    "ciaran teeters": "IE",
-    "benito van de pas": "NL",
     "glenn de bois": "GB",
     "nick kenny": "GB",
     "nathan rafferty": "GB",
-    "alexis toylo": "BE",
-    "dylan slevin": "IE",
-    "jurjen van der velde": "NL",
     "steve west": "GB",
     "neil duff": "GB",
     "johnny haines": "GB",
     "joe heywood": "GB",
+    
+    # Países Bajos
+    "michael van gerwen": "NL",
+    "dirk van duijvenbode": "NL",
+    "danny noppert": "NL",
+    "raymond van barneveld": "NL",
+    "wessel nijman": "NL",
+    "jermaine wattimena": "NL",
+    "gian van veen": "NL",
+    "benito van de pas": "NL",
+    "jurjen van der velde": "NL",
+    
+    # Bélgica
+    "dimitri van den bergh": "BE",
+    "kim huybrechts": "BE",
+    "alexis toylo": "BE",
+    
+    # Portugal
+    "jose de sousa": "PT",
+    
+    # Australia
+    "damon heta": "AU",
+    
+    # Alemania
+    "martin schindler": "DE",
+    "gabriel clemens": "DE",
+    "ricardo pietreczko": "DE",
+    "florian hempel": "DE",
+    
+    # Polonia
+    "krzysztof ratajski": "PL",
+    
+    # Irlanda
+    "keane barry": "IE",
+    "william o'connor": "IE",
+    "ciaran teeters": "IE",
+    "dylan slevin": "IE",
+    
+    # Canadá
+    "matt campbell": "CA",
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -254,32 +286,13 @@ def cargar_jugadores_desde(pestana: str):
 # FUNCIONES DE BANDERAS Y H2H
 # ═══════════════════════════════════════════════════════════════
 
-def codigo_a_emoji_bandera(codigo_pais):
-    """
-    Convierte código de país de 2 letras a emoji de bandera Unicode.
-    Ejemplo: 'GB' -> '🇬🇧', 'NL' -> '🇳🇱'
-    """
-    if not codigo_pais or len(codigo_pais) != 2:
-        return None
-    
-    # Emojis de banderas usan Regional Indicator Symbols
-    # A = 🇦 (U+1F1E6), B = 🇧 (U+1F1E7), etc.
-    OFFSET = 127462  # 0x1F1E6 - ord('A')
-    
-    try:
-        letra1 = chr(OFFSET + ord(codigo_pais[0].upper()) - ord('A'))
-        letra2 = chr(OFFSET + ord(codigo_pais[1].upper()) - ord('A'))
-        return letra1 + letra2
-    except:
-        return None
-
 def obtener_bandera(nombre_jugador):
     """Obtiene el emoji de bandera del jugador."""
     nombre_lower = nombre_jugador.lower().strip().replace("_", " ")
     codigo_pais = JUGADORES_PAISES.get(nombre_lower, None)
     
-    if codigo_pais:
-        return codigo_a_emoji_bandera(codigo_pais)
+    if codigo_pais and codigo_pais in BANDERAS:
+        return BANDERAS[codigo_pais]
     
     return None
 
@@ -506,7 +519,7 @@ def buscar_jugador(nombre, db):
 # ═══════════════════════════════════════════════════════════════
 
 def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
-    """Tarjeta visual SIMÉTRICA con stats del jugador Y BANDERA EMOJI."""
+    """Tarjeta visual SIMÉTRICA con stats del jugador Y BANDERA."""
     color = "#1f77b4" if is_left else "#ff7f0e"
     
     bandera = obtener_bandera(nombre)
@@ -877,7 +890,7 @@ if sel in st.session_state.last_update:
     st.sidebar.info(f"📅 **{sel}**\n\n⏱️ Actualizado hace **{tiempo_trans}s**")
 
 # ─────────────────────────────────────────────
-# INTERFAZ PRINCIPAL CON BANDERAS EMOJI EN TODAS LAS PESTAÑAS
+# INTERFAZ PRINCIPAL CON BANDERAS EN TODAS LAS PESTAÑAS
 # ─────────────────────────────────────────────
 if sel == "Value Bets":
     render_value_bets()
@@ -898,7 +911,7 @@ else:
     if d2 is not None:
         st.subheader("📈 Estadísticas por Jugador")
         for player, stats in d2.items():
-            # ✅ BANDERAS EMOJI EN TODAS LAS PESTAÑAS
+            # ✅ BANDERAS EN TODAS LAS PESTAÑAS
             bandera = obtener_bandera(player)
             player_display = f"{bandera} {player}" if bandera else f"👤 {player}"
             
