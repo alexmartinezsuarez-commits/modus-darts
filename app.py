@@ -33,6 +33,18 @@ CORTES = {
 
 PESTANAS_CON_STATS = [k for k in URLS if k not in ("Value Bets",)]
 
+# ═══════════════════════════════════════════════════════════════
+# INICIALIZACIÓN DE SESSION STATE (evitar resets)
+# ═══════════════════════════════════════════════════════════════
+if "vb_fuente" not in st.session_state:
+    st.session_state.vb_fuente = "Resumen Semanal"
+if "vb_j1" not in st.session_state:
+    st.session_state.vb_j1 = None
+if "vb_j2" not in st.session_state:
+    st.session_state.vb_j2 = None
+if "vb_calcular" not in st.session_state:
+    st.session_state.vb_calcular = False
+
 # ─────────────────────────────────────────────
 # FUNCIONES AUXILIARES GENERALES
 # ─────────────────────────────────────────────
@@ -109,13 +121,28 @@ def cargar_todo(url, opcion, cortes):
         return None, None
 
 # ─────────────────────────────────────────────
-# MATEMÁTICAS VALUE BETS
+# MATEMÁTICAS VALUE BETS — CON VALIDACIÓN ROBUSTA
 # ─────────────────────────────────────────────
 def safe_float(val, default=0.0):
+    """Convierte a float validando NaN/inf."""
     try:
-        return float(str(val).replace(',', '.').strip())
+        v = float(str(val).replace(',', '.').strip())
+        if not np.isfinite(v):
+            return default
+        return v
     except:
         return default
+
+def sanitize_prob(p):
+    """
+    Clampea probabilidad a rango [0.0001, 0.9999]
+    para evitar divisiones por 0 o cuotas infinitas.
+    """
+    if not np.isfinite(p) or p <= 0:
+        return 0.0001
+    if p >= 1:
+        return 0.9999
+    return max(0.0001, min(0.9999, p))
 
 def prob_victoria(pr1, pr2):
     if pr1 <= 0 and pr2 <= 0:
@@ -125,17 +152,17 @@ def prob_victoria(pr1, pr2):
     if den == 0:
         return 0.5, 0.5
     p1 = num / den
-    return p1, 1 - p1
+    return sanitize_prob(p1), sanitize_prob(1 - p1)
 
 def prob_180s(lam1, lam2):
     lam_total = lam1 + lam2
     return {
-        "J1 +0.5": 1 - poisson.cdf(0, lam1),
-        "J1 +1.5": 1 - poisson.cdf(1, lam1),
-        "J2 +0.5": 1 - poisson.cdf(0, lam2),
-        "J2 +1.5": 1 - poisson.cdf(1, lam2),
-        "Ambos +1.5": 1 - poisson.cdf(1, lam_total),
-        "Ambos +2.5": 1 - poisson.cdf(2, lam_total),
+        "J1 +0.5": sanitize_prob(1 - poisson.cdf(0, lam1)),
+        "J1 +1.5": sanitize_prob(1 - poisson.cdf(1, lam1)),
+        "J2 +0.5": sanitize_prob(1 - poisson.cdf(0, lam2)),
+        "J2 +1.5": sanitize_prob(1 - poisson.cdf(1, lam2)),
+        "Ambos +1.5": sanitize_prob(1 - poisson.cdf(1, lam_total)),
+        "Ambos +2.5": sanitize_prob(1 - poisson.cdf(2, lam_total)),
     }
 
 def quien_hace_mas_180s(lam1, lam2):
@@ -145,43 +172,45 @@ def quien_hace_mas_180s(lam1, lam2):
         return 1/3, 1/3, 1/3
     p_j1 = (1 - p_empate) * (lam1 / lam_sum)
     p_j2 = (1 - p_empate) * (lam2 / lam_sum)
-    return p_j1, p_empate, p_j2
+    return sanitize_prob(p_j1), sanitize_prob(p_empate), sanitize_prob(p_j2)
 
 def handicaps_legs(v1, v2):
-    """Devuelve hándicaps para J1 Y J2."""
     denom = v1 * (1 - v2) + v2 * (1 - v1)
     if denom == 0:
-        return {}
-    R = (v1 * (1 - v2)) / denom   # R = prob ajustada de que gane J1
-    R2 = 1 - R                     # prob ajustada de que gane J2
+        return {k: 0.5 for k in ["J1 -1.5 Legs", "J1 -2.5 Legs", "J1 +1.5 Legs", 
+                                  "J1 +2.5 Legs", "J2 -1.5 Legs", "J2 -2.5 Legs",
+                                  "J2 +1.5 Legs", "J2 +2.5 Legs"]}
+    R = (v1 * (1 - v2)) / denom
+    R2 = 1 - R
     return {
-        "J1 -1.5 Legs": R * 0.75,
-        "J1 -2.5 Legs": R * 0.50,
-        "J1 +1.5 Legs": R + (1 - R) * 0.40,
-        "J1 +2.5 Legs": R + (1 - R) * 0.70,
-        "J2 -1.5 Legs": R2 * 0.75,
-        "J2 -2.5 Legs": R2 * 0.50,
-        "J2 +1.5 Legs": R2 + (1 - R2) * 0.40,
-        "J2 +2.5 Legs": R2 + (1 - R2) * 0.70,
+        "J1 -1.5 Legs": sanitize_prob(R * 0.75),
+        "J1 -2.5 Legs": sanitize_prob(R * 0.50),
+        "J1 +1.5 Legs": sanitize_prob(R + (1 - R) * 0.40),
+        "J1 +2.5 Legs": sanitize_prob(R + (1 - R) * 0.70),
+        "J2 -1.5 Legs": sanitize_prob(R2 * 0.75),
+        "J2 -2.5 Legs": sanitize_prob(R2 * 0.50),
+        "J2 +1.5 Legs": sanitize_prob(R2 + (1 - R2) * 0.40),
+        "J2 +2.5 Legs": sanitize_prob(R2 + (1 - R2) * 0.70),
     }
 
 def legs_totales(lam_legs1, lam_legs2):
     lam_media = (lam_legs1 + lam_legs2) / 2
-    return 1 - poisson.cdf(5, lam_media)
+    return sanitize_prob(1 - poisson.cdf(5, lam_media))
 
 def prob_a_cuota(p):
-    if p <= 0:
-        return "∞"
-    return round(1 / p, 2)
+    """
+    Convierte probabilidad a cuota decimal.
+    Clampea el resultado entre 1.01 y 999.0 para evitar valores extremos.
+    """
+    p_safe = sanitize_prob(p)
+    cuota = 1.0 / p_safe
+    return max(1.01, min(999.0, cuota))
 
 def pct(p):
     return f"{p * 100:.1f}%"
 
 def calcular_yield(prob, cuota_bookie):
-    """
-    Yield = (prob * cuota_bookie) - 1
-    Positivo → value bet. Negativo → sin valor.
-    """
+    """Yield = (prob * cuota_bookie) - 1"""
     return (prob * cuota_bookie) - 1
 
 def badge_yield(y):
@@ -197,15 +226,10 @@ def badge_yield(y):
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=600)
 def cargar_jugadores_desde(pestana: str):
-    """
-    Carga PR, λ-180 y λ-Legs desde cualquier pestaña
-    buscando dinámicamente la fila cabecera.
-    """
     try:
         url = URLS[pestana]
         df = pd.read_csv(url, header=None)
 
-        # Buscar fila con "Jugador"
         fila_header = None
         for i, row in df.iterrows():
             if any(str(v).strip().lower() == "jugador" for v in row.values):
@@ -213,8 +237,6 @@ def cargar_jugadores_desde(pestana: str):
                 break
 
         if fila_header is None:
-            # Intentar con la lógica de días (extraer_stats_diarias)
-            # Para días, los datos de jugadores están en las columnas de la derecha
             corte = CORTES.get(pestana, {})
             if "der_nombres" in corte:
                 der_f  = corte["der_nombres"]
@@ -281,65 +303,98 @@ def buscar_jugador(nombre, db):
     return None
 
 # ─────────────────────────────────────────────
-# WIDGET DE CUOTA BOOKIE (manual)
+# WIDGET DE CUOTA BOOKIE — Con claves únicas persistentes
 # ─────────────────────────────────────────────
-def widget_cuota(key_prefix, mercado, prob):
+def widget_cuota(mercado, prob, idx):
     """
-    Muestra cuota justa + input de cuota bookie + badge de yield.
-    Devuelve la cuota introducida.
+    idx: índice único para evitar colisiones de keys
     """
     cuota_justa = prob_a_cuota(prob)
+    
     col_a, col_b, col_c = st.columns([3, 2, 2])
     with col_a:
         st.write(f"**{mercado}**")
-        st.caption(f"Prob: {pct(prob)}  |  Cuota justa: {cuota_justa}")
+        st.caption(f"Prob: {pct(prob)}  |  Cuota justa: {cuota_justa:.2f}")
     with col_b:
         cuota_input = st.number_input(
             "Cuota bookie",
-            min_value=1.01, max_value=50.0, value=float(cuota_justa) if isinstance(cuota_justa, float) else 2.0,
-            step=0.05, key=f"{key_prefix}_{mercado}"
+            min_value=1.01,
+            max_value=50.0,
+            value=min(cuota_justa, 50.0),  # Clamp para evitar error
+            step=0.05,
+            key=f"cuota_{idx}"
         )
     with col_c:
         y = calcular_yield(prob, cuota_input)
         st.markdown(f"<br><span style='font-size:1.1em'>{badge_yield(y)}</span>", unsafe_allow_html=True)
-    return cuota_input
 
 # ─────────────────────────────────────────────
-# RENDER VALUE BETS
+# RENDER VALUE BETS — CON PERSISTENCIA DE ESTADO
 # ─────────────────────────────────────────────
 def render_value_bets():
     st.title("💰 Value Bets — Motor de Probabilidades")
-
-    # ── SELECTOR DE FUENTE DE DATOS ──────────────────────────────
+    
+    # ── SELECTOR DE FUENTE (con session_state) ──
     st.markdown("### ⚙️ Configuración")
+    fuente_idx = PESTANAS_CON_STATS.index(st.session_state.vb_fuente)
     fuente = st.selectbox(
         "📂 Usar estadísticas de:",
         PESTANAS_CON_STATS,
-        index=PESTANAS_CON_STATS.index("Resumen Semanal"),
-        help="Elige de qué pestaña se extraen los datos de cada jugador (PR, 180s, Legs)."
+        index=fuente_idx,
+        key="selector_fuente"
     )
+    st.session_state.vb_fuente = fuente
 
     with st.spinner(f"Cargando datos de '{fuente}'..."):
         db_jugadores = cargar_jugadores_desde(fuente)
 
     if not db_jugadores:
-        st.warning(f"⚠️ No se encontraron jugadores en '{fuente}'. Prueba otra pestaña.")
+        st.warning(f"⚠️ No se encontraron jugadores en '{fuente}'.")
         return
 
     nombres_disponibles = sorted([v["nombre_original"] for v in db_jugadores.values()])
-    st.success(f"✅ {len(nombres_disponibles)} jugadores cargados desde **{fuente}**")
+    st.success(f"✅ {len(nombres_disponibles)} jugadores cargados")
 
-    # ── SELECTOR DE JUGADORES ─────────────────────────────────────
+    # ── SELECTOR DE JUGADORES (con session_state) ──
     st.markdown("### 🥊 Seleccionar Enfrentamiento")
-    col1, col2 = st.columns(2)
+    
+    # Inicializar valores por defecto si es la primera vez
+    if st.session_state.vb_j1 is None or st.session_state.vb_j1 not in nombres_disponibles:
+        st.session_state.vb_j1 = nombres_disponibles[0]
+    if st.session_state.vb_j2 is None or st.session_state.vb_j2 not in nombres_disponibles:
+        opciones_j2 = [n for n in nombres_disponibles if n != st.session_state.vb_j1]
+        st.session_state.vb_j2 = opciones_j2[0] if opciones_j2 else nombres_disponibles[0]
+
+    col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
-        j1_sel = st.selectbox("Jugador 1", nombres_disponibles, key="vb_j1")
+        j1_sel = st.selectbox(
+            "Jugador 1",
+            nombres_disponibles,
+            index=nombres_disponibles.index(st.session_state.vb_j1),
+            key="sel_j1"
+        )
+        st.session_state.vb_j1 = j1_sel
+    
     with col2:
         opciones_j2 = [n for n in nombres_disponibles if n != j1_sel]
-        j2_sel = st.selectbox("Jugador 2", opciones_j2, key="vb_j2")
+        if st.session_state.vb_j2 not in opciones_j2:
+            st.session_state.vb_j2 = opciones_j2[0] if opciones_j2 else nombres_disponibles[0]
+        
+        j2_sel = st.selectbox(
+            "Jugador 2",
+            opciones_j2,
+            index=opciones_j2.index(st.session_state.vb_j2) if st.session_state.vb_j2 in opciones_j2 else 0,
+            key="sel_j2"
+        )
+        st.session_state.vb_j2 = j2_sel
+    
+    with col3:
+        if st.button("🔢 Calcular", type="primary"):
+            st.session_state.vb_calcular = True
 
-    if not st.button("🔢 Calcular Mercados", type="primary"):
-        st.info("Selecciona los jugadores y pulsa **Calcular Mercados**.")
+    # ── MOSTRAR CÁLCULOS SOLO SI SE HA PULSADO EL BOTÓN ──
+    if not st.session_state.vb_calcular:
+        st.info("👆 Selecciona los jugadores y pulsa **Calcular**")
         return
 
     j1 = buscar_jugador(j1_sel, db_jugadores)
@@ -353,73 +408,71 @@ def render_value_bets():
     lam1, lam2   = j1["lam_180"],  j2["lam_180"]
     legs1, legs2 = j1["lam_legs"], j2["lam_legs"]
 
-    # ── CABECERA DEL PARTIDO ──────────────────────────────────────
+    # ── CABECERA ──
     st.markdown("---")
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     with c1:
-        st.markdown(f"**Jugador 1:** {j1['nombre_original']}")
-        st.markdown(f"**Jugador 2:** {j2['nombre_original']}")
+        st.markdown(f"**{j1['nombre_original']}**")
+        st.caption(f"PR: {pr1:.1f} | λ 180s: {lam1:.2f} | λ Legs: {legs1:.2f}")
     with c2:
-        st.markdown(f"**PR J1:** {pr1:.1f} | **PR J2:** {pr2:.1f}")
-        st.markdown(f"**λ 180s J1:** {lam1:.2f} | **λ 180s J2:** {lam2:.2f}")
-    with c3:
-        st.markdown(f"**λ Legs J1:** {legs1:.2f} | **λ Legs J2:** {legs2:.2f}")
-        st.caption(f"Fuente: {fuente}")
+        st.markdown(f"**{j2['nombre_original']}**")
+        st.caption(f"PR: {pr2:.1f} | λ 180s: {lam2:.2f} | λ Legs: {legs2:.2f}")
 
     v1, v2 = prob_victoria(pr1, pr2)
 
-    # ── 1. VICTORIA ──────────────────────────────────────────────
+    # ── 1. VICTORIA ──
     st.markdown("---")
-    st.markdown("#### 🏆 Mercado de Victoria")
-    widget_cuota(f"vic_{j1_sel}", f"Gana {j1['nombre_original']}", v1)
-    widget_cuota(f"vic_{j2_sel}", f"Gana {j2['nombre_original']}", v2)
+    st.markdown("#### 🏆 Victoria")
+    widget_cuota(f"Gana {j1['nombre_original']}", v1, "vic_j1")
+    widget_cuota(f"Gana {j2['nombre_original']}", v2, "vic_j2")
 
-    # ── 2. 180s ──────────────────────────────────────────────────
+    # ── 2. 180s ──
     st.markdown("---")
-    st.markdown("#### 🎯 Mercado de 180s")
+    st.markdown("#### 🎯 180s")
     m180 = prob_180s(lam1, lam2)
-    mercados_180 = {
-        f"{j1['nombre_original']} +0.5 180s": m180["J1 +0.5"],
-        f"{j1['nombre_original']} +1.5 180s": m180["J1 +1.5"],
-        f"{j2['nombre_original']} +0.5 180s": m180["J2 +0.5"],
-        f"{j2['nombre_original']} +1.5 180s": m180["J2 +1.5"],
-        "Ambos +1.5 180s": m180["Ambos +1.5"],
-        "Ambos +2.5 180s": m180["Ambos +2.5"],
-    }
-    for mercado, prob in mercados_180.items():
-        widget_cuota(f"180_{j1_sel}{j2_sel}", mercado, prob)
+    idx = 0
+    for mercado_key, prob in [
+        (f"{j1['nombre_original']} +0.5", m180["J1 +0.5"]),
+        (f"{j1['nombre_original']} +1.5", m180["J1 +1.5"]),
+        (f"{j2['nombre_original']} +0.5", m180["J2 +0.5"]),
+        (f"{j2['nombre_original']} +1.5", m180["J2 +1.5"]),
+        ("Ambos +1.5", m180["Ambos +1.5"]),
+        ("Ambos +2.5", m180["Ambos +2.5"]),
+    ]:
+        widget_cuota(mercado_key, prob, f"180_{idx}")
+        idx += 1
 
-    # ── 3. QUIÉN HACE MÁS 180s ───────────────────────────────────
+    # ── 3. QUIÉN HACE MÁS ──
     st.markdown("---")
     st.markdown("#### 🥇 ¿Quién hace más 180s?")
     p_j1_mas, p_emp, p_j2_mas = quien_hace_mas_180s(lam1, lam2)
-    widget_cuota(f"mas180_{j1_sel}{j2_sel}", f"Más 180s: {j1['nombre_original']}", p_j1_mas)
-    widget_cuota(f"mas180_{j1_sel}{j2_sel}", "Empate en 180s", p_emp)
-    widget_cuota(f"mas180_{j1_sel}{j2_sel}", f"Más 180s: {j2['nombre_original']}", p_j2_mas)
+    widget_cuota(f"Más: {j1['nombre_original']}", p_j1_mas, "mas_j1")
+    widget_cuota("Empate", p_emp, "mas_emp")
+    widget_cuota(f"Más: {j2['nombre_original']}", p_j2_mas, "mas_j2")
 
-    # ── 4. HÁNDICAPS ─────────────────────────────────────────────
+    # ── 4. HÁNDICAPS ──
     st.markdown("---")
     st.markdown("#### 📐 Hándicaps de Legs")
     hcaps = handicaps_legs(v1, v2)
-    etiq_map = {
-        "J1 -1.5 Legs": f"{j1['nombre_original']} -1.5 Legs",
-        "J1 -2.5 Legs": f"{j1['nombre_original']} -2.5 Legs",
-        "J1 +1.5 Legs": f"{j1['nombre_original']} +1.5 Legs",
-        "J1 +2.5 Legs": f"{j1['nombre_original']} +2.5 Legs",
-        "J2 -1.5 Legs": f"{j2['nombre_original']} -1.5 Legs",
-        "J2 -2.5 Legs": f"{j2['nombre_original']} -2.5 Legs",
-        "J2 +1.5 Legs": f"{j2['nombre_original']} +1.5 Legs",
-        "J2 +2.5 Legs": f"{j2['nombre_original']} +2.5 Legs",
-    }
-    for k, etiq in etiq_map.items():
-        widget_cuota(f"hcap_{j1_sel}{j2_sel}", etiq, hcaps[k])
+    idx = 0
+    for k, etiq in [
+        ("J1 -1.5 Legs", f"{j1['nombre_original']} -1.5"),
+        ("J1 -2.5 Legs", f"{j1['nombre_original']} -2.5"),
+        ("J1 +1.5 Legs", f"{j1['nombre_original']} +1.5"),
+        ("J1 +2.5 Legs", f"{j1['nombre_original']} +2.5"),
+        ("J2 -1.5 Legs", f"{j2['nombre_original']} -1.5"),
+        ("J2 -2.5 Legs", f"{j2['nombre_original']} -2.5"),
+        ("J2 +1.5 Legs", f"{j2['nombre_original']} +1.5"),
+        ("J2 +2.5 Legs", f"{j2['nombre_original']} +2.5"),
+    ]:
+        widget_cuota(etiq, hcaps[k], f"hcap_{idx}")
+        idx += 1
 
-    # ── 5. LEGS TOTALES ───────────────────────────────────────────
+    # ── 5. LEGS TOTALES ──
     st.markdown("---")
     st.markdown("#### 📊 Legs Totales")
     p_legs = legs_totales(legs1, legs2)
-    widget_cuota(f"legs_{j1_sel}{j2_sel}", "Más de 5.5 Legs en total", p_legs)
-
+    widget_cuota("Más de 5.5 Legs", p_legs, "legs_total")
 
 # ─────────────────────────────────────────────
 # INTERFAZ PRINCIPAL
