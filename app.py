@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from scipy.stats import poisson
+from datetime import datetime
 
 st.set_page_config(page_title="Modus Super Series App", layout="wide", page_icon="🎯")
 
@@ -44,6 +45,8 @@ if "vb_j2" not in st.session_state:
     st.session_state.vb_j2 = None
 if "vb_calcular" not in st.session_state:
     st.session_state.vb_calcular = False
+if "last_update" not in st.session_state:
+    st.session_state.last_update = {}
 
 # ─────────────────────────────────────────────
 # FUNCIONES AUXILIARES GENERALES
@@ -96,10 +99,21 @@ def extraer_stats_resumen(df):
             data_final[nombre_jugador] = stats
     return data_final
 
-@st.cache_data(ttl=600)
+# ═══════════════════════════════════════════════════════════════
+# FASE 2: CACHÉ OPTIMIZADA CON TTL BAJO (30 segundos)
+# ═══════════════════════════════════════════════════════════════
+@st.cache_data(ttl=30)  # ⚡ Reducido de 600s a 30s
 def cargar_todo(url, opcion, cortes):
+    """
+    Carga datos con caché de 30 segundos.
+    Registra timestamp de carga en session_state.
+    """
     try:
         df = pd.read_csv(url, header=None)
+        
+        # Registrar timestamp
+        st.session_state.last_update[opcion] = datetime.now()
+        
         if opcion == "Resumen Semanal":
             f, c = cortes["filas"], cortes["cols"]
             res = df.iloc[f[0]:f[1], c[0]:c[1]]
@@ -117,156 +131,21 @@ def cargar_todo(url, opcion, cortes):
             izq.columns = izq.iloc[0]; izq = izq[1:]
             s = extraer_stats_diarias(df, cortes["der_nombres"], cortes["der_cols"])
             return arreglar_columnas(izq.dropna(how='all')), s
-    except:
+    except Exception as e:
+        st.error(f"Error cargando {opcion}: {e}")
         return None, None
 
-# ─────────────────────────────────────────────
-# MATEMÁTICAS VALUE BETS — CON VALIDACIÓN ROBUSTA
-# ─────────────────────────────────────────────
-def safe_float(val, default=0.0):
-    """Convierte a float validando NaN/inf."""
-    try:
-        v = float(str(val).replace(',', '.').strip())
-        if not np.isfinite(v):
-            return default
-        return v
-    except:
-        return default
-
-def sanitize_prob(p):
-    """
-    Clampea probabilidad a rango [0.0001, 0.9999]
-    para evitar divisiones por 0 o cuotas infinitas.
-    """
-    if not np.isfinite(p) or p <= 0:
-        return 0.0001
-    if p >= 1:
-        return 0.9999
-    return max(0.0001, min(0.9999, p))
-
-def prob_victoria(pr1, pr2):
-    if pr1 <= 0 and pr2 <= 0:
-        return 0.5, 0.5
-    num = (pr1 ** 4.5) * 1.12
-    den = num + (pr2 ** 4.5)
-    if den == 0:
-        return 0.5, 0.5
-    p1 = num / den
-    return sanitize_prob(p1), sanitize_prob(1 - p1)
-
-def prob_180s(lam1, lam2):
-    lam_total = lam1 + lam2
-    return {
-        "J1 +0.5": sanitize_prob(1 - poisson.cdf(0, lam1)),
-        "J1 +1.5": sanitize_prob(1 - poisson.cdf(1, lam1)),
-        "J2 +0.5": sanitize_prob(1 - poisson.cdf(0, lam2)),
-        "J2 +1.5": sanitize_prob(1 - poisson.cdf(1, lam2)),
-        "Ambos +1.5": sanitize_prob(1 - poisson.cdf(1, lam_total)),
-        "Ambos +2.5": sanitize_prob(1 - poisson.cdf(2, lam_total)),
-    }
-
-def quien_hace_mas_180s(lam1, lam2):
-    p_empate = sum(poisson.pmf(k, lam1) * poisson.pmf(k, lam2) for k in range(3))
-    lam_sum = lam1 + lam2
-    if lam_sum == 0:
-        return 1/3, 1/3, 1/3
-    p_j1 = (1 - p_empate) * (lam1 / lam_sum)
-    p_j2 = (1 - p_empate) * (lam2 / lam_sum)
-    return sanitize_prob(p_j1), sanitize_prob(p_empate), sanitize_prob(p_j2)
-
-def handicaps_legs(v1, v2):
-    denom = v1 * (1 - v2) + v2 * (1 - v1)
-    if denom == 0:
-        return {k: 0.5 for k in ["J1 -1.5 Legs", "J1 -2.5 Legs", "J1 +1.5 Legs", 
-                                  "J1 +2.5 Legs", "J2 -1.5 Legs", "J2 -2.5 Legs",
-                                  "J2 +1.5 Legs", "J2 +2.5 Legs"]}
-    R = (v1 * (1 - v2)) / denom
-    R2 = 1 - R
-    return {
-        "J1 -1.5 Legs": sanitize_prob(R * 0.75),
-        "J1 -2.5 Legs": sanitize_prob(R * 0.50),
-        "J1 +1.5 Legs": sanitize_prob(R + (1 - R) * 0.40),
-        "J1 +2.5 Legs": sanitize_prob(R + (1 - R) * 0.70),
-        "J2 -1.5 Legs": sanitize_prob(R2 * 0.75),
-        "J2 -2.5 Legs": sanitize_prob(R2 * 0.50),
-        "J2 +1.5 Legs": sanitize_prob(R2 + (1 - R2) * 0.40),
-        "J2 +2.5 Legs": sanitize_prob(R2 + (1 - R2) * 0.70),
-    }
-
-def legs_totales(lam_legs1, lam_legs2):
-    """
-    Calcula probabilidades de Over/Under 5.5 legs totales
-    en un partido al mejor de 7 legs (first to 4).
-    
-    Usa distribución binomial negativa:
-    - Under 5.5 = marcadores 4-0, 4-1, 0-4, 1-4
-    - Over 5.5 = todos los demás marcadores (4-2, 4-3, etc.)
-    
-    Fórmula:
-    p = Media_J1 / (Media_J1 + Media_J2)
-    P(Under 5.5) = p^4 + 4*p^4*q + q^4 + 4*q^4*p
-    """
-    # Probabilidad de que J1 gane un leg individual
-    if lam_legs1 + lam_legs2 == 0:
-        p = 0.5
-    else:
-        p = lam_legs1 / (lam_legs1 + lam_legs2)
-    
-    q = 1 - p  # Probabilidad de que J2 gane un leg
-    
-    # Under 5.5 = marcadores 4-0, 4-1, 0-4, 1-4
-    # J1 gana 4-0: p^4
-    prob_4_0_j1 = p ** 4
-    
-    # J1 gana 4-1: C(4,3) * p^4 * q^1 = 4 * p^4 * q
-    prob_4_1_j1 = 4 * (p ** 4) * q
-    
-    # J2 gana 4-0: q^4
-    prob_4_0_j2 = q ** 4
-    
-    # J2 gana 4-1: C(4,3) * q^4 * p^1 = 4 * q^4 * p
-    prob_4_1_j2 = 4 * (q ** 4) * p
-    
-    prob_under_5_5 = prob_4_0_j1 + prob_4_1_j1 + prob_4_0_j2 + prob_4_1_j2
-    prob_over_5_5 = 1 - prob_under_5_5
-    
-    return {
-        "Más de 5.5": sanitize_prob(prob_over_5_5),
-        "Menos de 5.5": sanitize_prob(prob_under_5_5)
-    }
-
-def prob_a_cuota(p):
-    """
-    Convierte probabilidad a cuota decimal.
-    Clampea el resultado entre 1.01 y 999.0 para evitar valores extremos.
-    """
-    p_safe = sanitize_prob(p)
-    cuota = 1.0 / p_safe
-    return max(1.01, min(999.0, cuota))
-
-def pct(p):
-    return f"{p * 100:.1f}%"
-
-def calcular_yield(prob, cuota_bookie):
-    """Yield = (prob * cuota_bookie) - 1"""
-    return (prob * cuota_bookie) - 1
-
-def badge_yield(y):
-    if y > 0:
-        return f"✅ +{y*100:.1f}% VALUE"
-    elif y < -0.05:
-        return f"❌ {y*100:.1f}% sin valor"
-    else:
-        return f"➖ {y*100:.1f}% neutro"
-
-# ─────────────────────────────────────────────
-# CARGA DINÁMICA — fuente seleccionable
-# ─────────────────────────────────────────────
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=30)  # ⚡ 30 segundos también para Value Bets
 def cargar_jugadores_desde(pestana: str):
+    """
+    Carga jugadores con caché de 30 segundos.
+    """
     try:
         url = URLS[pestana]
         df = pd.read_csv(url, header=None)
+        
+        # Registrar timestamp
+        st.session_state.last_update[pestana] = datetime.now()
 
         fila_header = None
         for i, row in df.iterrows():
@@ -325,6 +204,114 @@ def cargar_jugadores_desde(pestana: str):
         st.error(f"Error cargando {pestana}: {e}")
         return {}
 
+# ─────────────────────────────────────────────
+# MATEMÁTICAS VALUE BETS
+# ─────────────────────────────────────────────
+def safe_float(val, default=0.0):
+    try:
+        v = float(str(val).replace(',', '.').strip())
+        if not np.isfinite(v):
+            return default
+        return v
+    except:
+        return default
+
+def sanitize_prob(p):
+    if not np.isfinite(p) or p <= 0:
+        return 0.0001
+    if p >= 1:
+        return 0.9999
+    return max(0.0001, min(0.9999, p))
+
+def prob_victoria(pr1, pr2):
+    if pr1 <= 0 and pr2 <= 0:
+        return 0.5, 0.5
+    num = (pr1 ** 4.5) * 1.12
+    den = num + (pr2 ** 4.5)
+    if den == 0:
+        return 0.5, 0.5
+    p1 = num / den
+    return sanitize_prob(p1), sanitize_prob(1 - p1)
+
+def prob_180s(lam1, lam2):
+    lam_total = lam1 + lam2
+    return {
+        "J1 +0.5": sanitize_prob(1 - poisson.cdf(0, lam1)),
+        "J1 +1.5": sanitize_prob(1 - poisson.cdf(1, lam1)),
+        "J2 +0.5": sanitize_prob(1 - poisson.cdf(0, lam2)),
+        "J2 +1.5": sanitize_prob(1 - poisson.cdf(1, lam2)),
+        "Ambos +1.5": sanitize_prob(1 - poisson.cdf(1, lam_total)),
+        "Ambos +2.5": sanitize_prob(1 - poisson.cdf(2, lam_total)),
+    }
+
+def quien_hace_mas_180s(lam1, lam2):
+    p_empate = sum(poisson.pmf(k, lam1) * poisson.pmf(k, lam2) for k in range(3))
+    lam_sum = lam1 + lam2
+    if lam_sum == 0:
+        return 1/3, 1/3, 1/3
+    p_j1 = (1 - p_empate) * (lam1 / lam_sum)
+    p_j2 = (1 - p_empate) * (lam2 / lam_sum)
+    return sanitize_prob(p_j1), sanitize_prob(p_empate), sanitize_prob(p_j2)
+
+def handicaps_legs(v1, v2):
+    denom = v1 * (1 - v2) + v2 * (1 - v1)
+    if denom == 0:
+        return {k: 0.5 for k in ["J1 -1.5 Legs", "J1 -2.5 Legs", "J1 +1.5 Legs", 
+                                  "J1 +2.5 Legs", "J2 -1.5 Legs", "J2 -2.5 Legs",
+                                  "J2 +1.5 Legs", "J2 +2.5 Legs"]}
+    R = (v1 * (1 - v2)) / denom
+    R2 = 1 - R
+    return {
+        "J1 -1.5 Legs": sanitize_prob(R * 0.75),
+        "J1 -2.5 Legs": sanitize_prob(R * 0.50),
+        "J1 +1.5 Legs": sanitize_prob(R + (1 - R) * 0.40),
+        "J1 +2.5 Legs": sanitize_prob(R + (1 - R) * 0.70),
+        "J2 -1.5 Legs": sanitize_prob(R2 * 0.75),
+        "J2 -2.5 Legs": sanitize_prob(R2 * 0.50),
+        "J2 +1.5 Legs": sanitize_prob(R2 + (1 - R2) * 0.40),
+        "J2 +2.5 Legs": sanitize_prob(R2 + (1 - R2) * 0.70),
+    }
+
+def legs_totales(lam_legs1, lam_legs2):
+    if lam_legs1 + lam_legs2 == 0:
+        p = 0.5
+    else:
+        p = lam_legs1 / (lam_legs1 + lam_legs2)
+    
+    q = 1 - p
+    
+    prob_4_0_j1 = p ** 4
+    prob_4_1_j1 = 4 * (p ** 4) * q
+    prob_4_0_j2 = q ** 4
+    prob_4_1_j2 = 4 * (q ** 4) * p
+    
+    prob_under_5_5 = prob_4_0_j1 + prob_4_1_j1 + prob_4_0_j2 + prob_4_1_j2
+    prob_over_5_5 = 1 - prob_under_5_5
+    
+    return {
+        "Más de 5.5": sanitize_prob(prob_over_5_5),
+        "Menos de 5.5": sanitize_prob(prob_under_5_5)
+    }
+
+def prob_a_cuota(p):
+    p_safe = sanitize_prob(p)
+    cuota = 1.0 / p_safe
+    return max(1.01, min(999.0, cuota))
+
+def pct(p):
+    return f"{p * 100:.1f}%"
+
+def calcular_yield(prob, cuota_bookie):
+    return (prob * cuota_bookie) - 1
+
+def badge_yield(y):
+    if y > 0:
+        return f"✅ +{y*100:.1f}% VALUE"
+    elif y < -0.05:
+        return f"❌ {y*100:.1f}% sin valor"
+    else:
+        return f"➖ {y*100:.1f}% neutro"
+
 def _buscar_stat(stats_dict, keywords):
     for k, v in stats_dict.items():
         if any(kw in k.lower() for kw in keywords):
@@ -341,12 +328,9 @@ def buscar_jugador(nombre, db):
     return None
 
 # ─────────────────────────────────────────────
-# WIDGET DE CUOTA BOOKIE — Con claves únicas persistentes
+# WIDGET DE CUOTA BOOKIE
 # ─────────────────────────────────────────────
 def widget_cuota(mercado, prob, idx):
-    """
-    idx: índice único para evitar colisiones de keys
-    """
     cuota_justa = prob_a_cuota(prob)
     
     col_a, col_b, col_c = st.columns([3, 2, 2])
@@ -358,7 +342,7 @@ def widget_cuota(mercado, prob, idx):
             "Cuota bookie",
             min_value=1.01,
             max_value=50.0,
-            value=min(cuota_justa, 50.0),  # Clamp para evitar error
+            value=min(cuota_justa, 50.0),
             step=0.05,
             key=f"cuota_{idx}"
         )
@@ -367,12 +351,11 @@ def widget_cuota(mercado, prob, idx):
         st.markdown(f"<br><span style='font-size:1.1em'>{badge_yield(y)}</span>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# RENDER VALUE BETS — CON PERSISTENCIA DE ESTADO
+# RENDER VALUE BETS
 # ─────────────────────────────────────────────
 def render_value_bets():
     st.title("💰 Value Bets — Motor de Probabilidades")
     
-    # ── SELECTOR DE FUENTE (con session_state) ──
     st.markdown("### ⚙️ Configuración")
     fuente_idx = PESTANAS_CON_STATS.index(st.session_state.vb_fuente)
     fuente = st.selectbox(
@@ -391,12 +374,16 @@ def render_value_bets():
         return
 
     nombres_disponibles = sorted([v["nombre_original"] for v in db_jugadores.values()])
-    st.success(f"✅ {len(nombres_disponibles)} jugadores cargados")
+    
+    # Mostrar timestamp de última actualización
+    if fuente in st.session_state.last_update:
+        tiempo_transcurrido = (datetime.now() - st.session_state.last_update[fuente]).seconds
+        st.success(f"✅ {len(nombres_disponibles)} jugadores cargados | ⏱️ Actualizado hace {tiempo_transcurrido}s")
+    else:
+        st.success(f"✅ {len(nombres_disponibles)} jugadores cargados")
 
-    # ── SELECTOR DE JUGADORES (con session_state) ──
     st.markdown("### 🥊 Seleccionar Enfrentamiento")
     
-    # Inicializar valores por defecto si es la primera vez
     if st.session_state.vb_j1 is None or st.session_state.vb_j1 not in nombres_disponibles:
         st.session_state.vb_j1 = nombres_disponibles[0]
     if st.session_state.vb_j2 is None or st.session_state.vb_j2 not in nombres_disponibles:
@@ -430,7 +417,6 @@ def render_value_bets():
         if st.button("🔢 Calcular", type="primary"):
             st.session_state.vb_calcular = True
 
-    # ── MOSTRAR CÁLCULOS SOLO SI SE HA PULSADO EL BOTÓN ──
     if not st.session_state.vb_calcular:
         st.info("👆 Selecciona los jugadores y pulsa **Calcular**")
         return
@@ -446,7 +432,6 @@ def render_value_bets():
     lam1, lam2   = j1["lam_180"],  j2["lam_180"]
     legs1, legs2 = j1["lam_legs"], j2["lam_legs"]
 
-    # ── CABECERA ──
     st.markdown("---")
     c1, c2 = st.columns(2)
     with c1:
@@ -458,13 +443,11 @@ def render_value_bets():
 
     v1, v2 = prob_victoria(pr1, pr2)
 
-    # ── 1. VICTORIA ──
     st.markdown("---")
     st.markdown("#### 🏆 Victoria")
     widget_cuota(f"Gana {j1['nombre_original']}", v1, "vic_j1")
     widget_cuota(f"Gana {j2['nombre_original']}", v2, "vic_j2")
 
-    # ── 2. 180s ──
     st.markdown("---")
     st.markdown("#### 🎯 180s")
     m180 = prob_180s(lam1, lam2)
@@ -480,7 +463,6 @@ def render_value_bets():
         widget_cuota(mercado_key, prob, f"180_{idx}")
         idx += 1
 
-    # ── 3. QUIÉN HACE MÁS ──
     st.markdown("---")
     st.markdown("#### 🥇 ¿Quién hace más 180s?")
     p_j1_mas, p_emp, p_j2_mas = quien_hace_mas_180s(lam1, lam2)
@@ -488,7 +470,6 @@ def render_value_bets():
     widget_cuota("Empate", p_emp, "mas_emp")
     widget_cuota(f"Más: {j2['nombre_original']}", p_j2_mas, "mas_j2")
 
-    # ── 4. HÁNDICAPS ──
     st.markdown("---")
     st.markdown("#### 📐 Hándicaps de Legs")
     hcaps = handicaps_legs(v1, v2)
@@ -506,7 +487,6 @@ def render_value_bets():
         widget_cuota(etiq, hcaps[k], f"hcap_{idx}")
         idx += 1
 
-    # ── 5. LEGS TOTALES (BINOMIAL NEGATIVA) ──
     st.markdown("---")
     st.markdown("#### 📊 Legs Totales (First to 4)")
     st.caption("Basado en distribución binomial negativa — Under 5.5 = marcadores 4-0 y 4-1")
@@ -514,17 +494,40 @@ def render_value_bets():
     widget_cuota("Más de 5.5 Legs", legs_total_dict["Más de 5.5"], "legs_mas")
     widget_cuota("Menos de 5.5 Legs", legs_total_dict["Menos de 5.5"], "legs_menos")
 
-# ─────────────────────────────────────────────
-# INTERFAZ PRINCIPAL
-# ─────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# SIDEBAR CON BOTÓN DE REFRESH
+# ═══════════════════════════════════════════════════════════════
 st.sidebar.title("🎯 Menú Modus")
 sel = st.sidebar.radio("Ir a:", list(URLS.keys()), key="menu_principal")
 
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🔄 Actualización de Datos")
+st.sidebar.caption("Caché automática: 30 segundos")
+
+if st.sidebar.button("♻️ Forzar Refresh", help="Invalida toda la caché y recarga los datos inmediatamente"):
+    st.cache_data.clear()
+    st.session_state.last_update = {}
+    st.rerun()
+
+# Mostrar timestamp de última actualización en sidebar
+if sel in st.session_state.last_update:
+    ultima_act = st.session_state.last_update[sel]
+    tiempo_trans = (datetime.now() - ultima_act).seconds
+    st.sidebar.info(f"📅 **{sel}**\n\n⏱️ Actualizado hace **{tiempo_trans}s**")
+
+# ─────────────────────────────────────────────
+# INTERFAZ PRINCIPAL
+# ─────────────────────────────────────────────
 if sel == "Value Bets":
     render_value_bets()
 else:
     d1, d2 = cargar_todo(URLS[sel], sel, CORTES[sel])
     st.title(f"📊 {sel}")
+
+    # Mostrar timestamp de actualización
+    if sel in st.session_state.last_update:
+        tiempo = (datetime.now() - st.session_state.last_update[sel]).seconds
+        st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
 
     orden_diario = [
         "Media 180 por partida", "Promedio puntos total", "Diferencia de legs",
