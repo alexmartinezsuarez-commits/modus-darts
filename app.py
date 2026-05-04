@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from scipy.stats import poisson
 from datetime import datetime
-import requests
 
 st.set_page_config(page_title="Modus Super Series App", layout="wide", page_icon="🎯")
 
@@ -36,7 +35,7 @@ CORTES = {
 PESTANAS_CON_STATS = [k for k in URLS if k not in ("Value Bets",)]
 
 # ═══════════════════════════════════════════════════════════════
-# MAPEO DE JUGADORES A PAÍSES
+# MAPEO DE JUGADORES A PAÍSES (con emojis Unicode)
 # ═══════════════════════════════════════════════════════════════
 JUGADORES_PAISES = {
     "luke littler": "GB",
@@ -89,6 +88,10 @@ JUGADORES_PAISES = {
     "alexis toylo": "BE",
     "dylan slevin": "IE",
     "jurjen van der velde": "NL",
+    "steve west": "GB",
+    "neil duff": "GB",
+    "johnny haines": "GB",
+    "joe heywood": "GB",
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -251,13 +254,32 @@ def cargar_jugadores_desde(pestana: str):
 # FUNCIONES DE BANDERAS Y H2H
 # ═══════════════════════════════════════════════════════════════
 
+def codigo_a_emoji_bandera(codigo_pais):
+    """
+    Convierte código de país de 2 letras a emoji de bandera Unicode.
+    Ejemplo: 'GB' -> '🇬🇧', 'NL' -> '🇳🇱'
+    """
+    if not codigo_pais or len(codigo_pais) != 2:
+        return None
+    
+    # Emojis de banderas usan Regional Indicator Symbols
+    # A = 🇦 (U+1F1E6), B = 🇧 (U+1F1E7), etc.
+    OFFSET = 127462  # 0x1F1E6 - ord('A')
+    
+    try:
+        letra1 = chr(OFFSET + ord(codigo_pais[0].upper()) - ord('A'))
+        letra2 = chr(OFFSET + ord(codigo_pais[1].upper()) - ord('A'))
+        return letra1 + letra2
+    except:
+        return None
+
 def obtener_bandera(nombre_jugador):
-    """Obtiene la bandera del jugador usando el mapeo manual."""
+    """Obtiene el emoji de bandera del jugador."""
     nombre_lower = nombre_jugador.lower().strip().replace("_", " ")
     codigo_pais = JUGADORES_PAISES.get(nombre_lower, None)
     
     if codigo_pais:
-        return f"https://flagcdn.com/w40/{codigo_pais.lower()}.png"
+        return codigo_a_emoji_bandera(codigo_pais)
     
     return None
 
@@ -306,8 +328,6 @@ def extraer_h2h_semanal(j1_nombre, j2_nombre):
             
             # Leer cada 2 filas como un partido
             for i in range(0, len(df_partidos) - 1, 2):
-                # Fila i = Jugador 1
-                # Fila i+1 = Jugador 2
                 fila_j1 = df_partidos.iloc[i]
                 fila_j2 = df_partidos.iloc[i + 1]
                 
@@ -335,7 +355,6 @@ def extraer_h2h_semanal(j1_nombre, j2_nombre):
                     
                     if "4" in resultado_j1:
                         ganador = nombre_j1.title()
-                        # Verificar si ganó j1 o j2
                         if j1_lower in nombre_j1 or nombre_j1 in j1_lower:
                             h2h_data["victorias_j1"] += 1
                         else:
@@ -487,11 +506,11 @@ def buscar_jugador(nombre, db):
 # ═══════════════════════════════════════════════════════════════
 
 def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
-    """Tarjeta visual SIMÉTRICA con stats del jugador Y BANDERA."""
+    """Tarjeta visual SIMÉTRICA con stats del jugador Y BANDERA EMOJI."""
     color = "#1f77b4" if is_left else "#ff7f0e"
     
-    bandera_url = obtener_bandera(nombre)
-    bandera_html = f'<img src="{bandera_url}" style="width: 30px; height: 20px; margin-left: 10px; vertical-align: middle; border-radius: 3px;">' if bandera_url else ''
+    bandera = obtener_bandera(nombre)
+    nombre_display = f"{bandera} {nombre}" if bandera else f"🎯 {nombre}"
     
     st.markdown(f"""
     <div style="
@@ -504,7 +523,7 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
         flex-direction: column;
     ">
         <h3 style="color: {color}; margin: 0 0 20px 0; text-align: center;">
-            🎯 {nombre} {bandera_html}
+            {nombre_display}
         </h3>
         <div style="
             display: grid;
@@ -675,7 +694,6 @@ def render_value_bets():
     with col_j2:
         tarjeta_jugador(j2['nombre_original'], pr2, lam2, legs2, is_left=False)
 
-    # ── HEAD TO HEAD SEMANAL CORREGIDO ──
     st.markdown("---")
     st.markdown("### 🔥 Head to Head Semanal")
     
@@ -859,7 +877,7 @@ if sel in st.session_state.last_update:
     st.sidebar.info(f"📅 **{sel}**\n\n⏱️ Actualizado hace **{tiempo_trans}s**")
 
 # ─────────────────────────────────────────────
-# INTERFAZ PRINCIPAL CON BANDERAS EN TODAS LAS PESTAÑAS
+# INTERFAZ PRINCIPAL CON BANDERAS EMOJI EN TODAS LAS PESTAÑAS
 # ─────────────────────────────────────────────
 if sel == "Value Bets":
     render_value_bets()
@@ -880,13 +898,9 @@ else:
     if d2 is not None:
         st.subheader("📈 Estadísticas por Jugador")
         for player, stats in d2.items():
-            # ✅ BANDERAS EN TODAS LAS PESTAÑAS
-            bandera_url = obtener_bandera(player)
-            if bandera_url:
-                bandera_html = f'<img src="{bandera_url}" style="width: 20px; height: 14px; margin-right: 8px; vertical-align: middle; border-radius: 2px;">'
-                player_display = f"{bandera_html} {player}"
-            else:
-                player_display = f"👤 {player}"
+            # ✅ BANDERAS EMOJI EN TODAS LAS PESTAÑAS
+            bandera = obtener_bandera(player)
+            player_display = f"{bandera} {player}" if bandera else f"👤 {player}"
             
             with st.expander(player_display, expanded=False):
                 if sel == "Resumen Semanal":
