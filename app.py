@@ -77,7 +77,7 @@ HORARIOS = {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# ESTADÍSTICAS A MOSTRAR - SIN DUPLICADOS
+# ESTADÍSTICAS A MOSTRAR
 # ═══════════════════════════════════════════════════════════════
 ESTADISTICAS_MOSTRAR = [
     "Media 180 por partida",
@@ -90,7 +90,6 @@ ESTADISTICAS_MOSTRAR = [
     "PUNTIACIÓN GLOBAL (0-100)"
 ]
 
-# SOLO ESTAS MÉTRICAS MUESTRAN TENDENCIAS
 METRICAS_CON_TENDENCIA = [
     "promedio checkouts",
     "promedio dardos",
@@ -102,6 +101,12 @@ METRICAS_CON_TENDENCIA = [
 # ═══════════════════════════════════════════════════════════════
 if "last_update" not in st.session_state:
     st.session_state.last_update = {}
+if "vb_j1" not in st.session_state:
+    st.session_state.vb_j1 = None
+if "vb_j2" not in st.session_state:
+    st.session_state.vb_j2 = None
+if "vb_calcular" not in st.session_state:
+    st.session_state.vb_calcular = False
 
 # ─────────────────────────────────────────────
 # FUNCIONES AUXILIARES
@@ -176,6 +181,70 @@ def cargar_todo(url, opcion, cortes):
         st.error(f"Error cargando {opcion}: {e}")
         return None, None
 
+@st.cache_data(ttl=30)
+def cargar_jugadores_desde(pestana: str):
+    try:
+        url = URLS[pestana]
+        df = pd.read_csv(url, header=None)
+        st.session_state.last_update[pestana] = datetime.now()
+
+        fila_header = None
+        for i, row in df.iterrows():
+            if any(str(v).strip().lower() == "jugador" for v in row.values):
+                fila_header = i
+                break
+
+        if fila_header is None:
+            corte = CORTES.get(pestana, {})
+            if "der_nombres" in corte:
+                der_f = corte["der_nombres"]
+                der_c = corte["der_cols"]
+                stats = extraer_stats_diarias(df, der_f, der_c)
+                jugadores = {}
+                for nombre, s in stats.items():
+                    pr = safe_float(_buscar_stat(s, ["global", "puntuación", "puntuacion"]))
+                    lam_180 = safe_float(_buscar_stat(s, ["180", "ciento"]))
+                    lam_legs = safe_float(_buscar_stat(s, ["leg"]))
+                    jugadores[nombre.lower()] = {
+                        "nombre_original": nombre,
+                        "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs
+                    }
+                return jugadores
+            return {}
+
+        headers = [str(v).strip() for v in df.iloc[fila_header].values]
+        data = df.iloc[fila_header + 1:].copy()
+        data.columns = headers
+        data = data.reset_index(drop=True)
+
+        def buscar_col(keywords):
+            for h in headers:
+                if any(kw.lower() in h.lower() for kw in keywords):
+                    return h
+            return None
+
+        col_jugador = buscar_col(["jugador", "nombre"])
+        col_pr = buscar_col(["puntuación global", "puntuacion global", "global", "power"])
+        col_180 = buscar_col(["180"])
+        col_legs = buscar_col(["legs", "leg"])
+
+        jugadores = {}
+        for _, fila in data.iterrows():
+            nombre = str(fila.get(col_jugador, "")).strip() if col_jugador else ""
+            if not nombre or nombre.lower() in ["nan", "jugador", ""]:
+                continue
+            pr = safe_float(fila.get(col_pr, 0)) if col_pr else 0.0
+            lam_180 = safe_float(fila.get(col_180, 0)) if col_180 else 0.0
+            lam_legs = safe_float(fila.get(col_legs, 0)) if col_legs else 0.0
+            jugadores[nombre.lower()] = {
+                "nombre_original": nombre,
+                "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs
+            }
+        return jugadores
+    except Exception as e:
+        st.error(f"Error cargando {pestana}: {e}")
+        return {}
+
 def obtener_bandera(nombre_jugador):
     nombre_lower = nombre_jugador.lower().strip().replace("_", " ")
     codigo_pais = JUGADORES_PAISES.get(nombre_lower, None)
@@ -184,7 +253,6 @@ def obtener_bandera(nombre_jugador):
     return None
 
 def calcular_tendencia_stat(valor_actual, media_previa, umbral=10.0):
-    """Calcula tendencia, devuelve 'up', 'down' o 'neutral'"""
     if valor_actual is None or media_previa is None or media_previa == 0:
         return 'neutral'
     
@@ -235,7 +303,6 @@ def extraer_ultimo_valor(stats_dict, keywords):
     return None
 
 def detectar_jornada_activa():
-    """Detecta qué jornada está en vivo ahora."""
     ahora = datetime.now()
     dia_actual = ahora.weekday()
     hora_actual = ahora.time()
@@ -255,6 +322,257 @@ def detectar_jornada_activa():
                 return nombre_jornada
     
     return None
+
+# ═══════════════════════════════════════════════════════════════
+# FUNCIONES PARA VALUE BETS
+# ═══════════════════════════════════════════════════════════════
+def safe_float(val, default=0.0):
+    try:
+        v = float(str(val).replace(',', '.').strip())
+        if not np.isfinite(v):
+            return default
+        return v
+    except:
+        return default
+
+def sanitize_prob(p):
+    if not np.isfinite(p) or p <= 0:
+        return 0.0001
+    if p >= 1:
+        return 0.9999
+    return max(0.0001, min(0.9999, p))
+
+def prob_victoria(pr1, pr2):
+    if pr1 <= 0 and pr2 <= 0:
+        return 0.5, 0.5
+    num = (pr1 ** 4.5) * 1.12
+    den = num + (pr2 ** 4.5)
+    if den == 0:
+        return 0.5, 0.5
+    p1 = num / den
+    return sanitize_prob(p1), sanitize_prob(1 - p1)
+
+def prob_180s(lam1, lam2):
+    lam_total = lam1 + lam2
+    return {
+        "J1 +0.5": sanitize_prob(1 - poisson.cdf(0, lam1)),
+        "J1 +1.5": sanitize_prob(1 - poisson.cdf(1, lam1)),
+        "J2 +0.5": sanitize_prob(1 - poisson.cdf(0, lam2)),
+        "J2 +1.5": sanitize_prob(1 - poisson.cdf(1, lam2)),
+        "Ambos +1.5": sanitize_prob(1 - poisson.cdf(1, lam_total)),
+        "Ambos +2.5": sanitize_prob(1 - poisson.cdf(2, lam_total)),
+    }
+
+def quien_hace_mas_180s(lam1, lam2):
+    p_empate = sum(poisson.pmf(k, lam1) * poisson.pmf(k, lam2) for k in range(3))
+    lam_sum = lam1 + lam2
+    if lam_sum == 0:
+        return 1/3, 1/3, 1/3
+    p_j1 = (1 - p_empate) * (lam1 / lam_sum)
+    p_j2 = (1 - p_empate) * (lam2 / lam_sum)
+    return sanitize_prob(p_j1), sanitize_prob(p_empate), sanitize_prob(p_j2)
+
+def handicaps_legs(v1, v2):
+    denom = v1 * (1 - v2) + v2 * (1 - v1)
+    if denom == 0:
+        return {k: 0.5 for k in ["J1 -1.5 Legs", "J1 -2.5 Legs", "J1 +1.5 Legs", 
+                                  "J1 +2.5 Legs", "J2 -1.5 Legs", "J2 -2.5 Legs",
+                                  "J2 +1.5 Legs", "J2 +2.5 Legs"]}
+    R = (v1 * (1 - v2)) / denom
+    R2 = 1 - R
+    return {
+        "J1 -1.5 Legs": sanitize_prob(R * 0.75),
+        "J1 -2.5 Legs": sanitize_prob(R * 0.50),
+        "J1 +1.5 Legs": sanitize_prob(R + (1 - R) * 0.40),
+        "J1 +2.5 Legs": sanitize_prob(R + (1 - R) * 0.70),
+        "J2 -1.5 Legs": sanitize_prob(R2 * 0.75),
+        "J2 -2.5 Legs": sanitize_prob(R2 * 0.50),
+        "J2 +1.5 Legs": sanitize_prob(R2 + (1 - R2) * 0.40),
+        "J2 +2.5 Legs": sanitize_prob(R2 + (1 - R2) * 0.70),
+    }
+
+def legs_totales(lam_legs1, lam_legs2):
+    if lam_legs1 + lam_legs2 == 0:
+        p = 0.5
+    else:
+        p = lam_legs1 / (lam_legs1 + lam_legs2)
+    
+    q = 1 - p
+    prob_4_0_j1 = p ** 4
+    prob_4_1_j1 = 4 * (p ** 4) * q
+    prob_4_0_j2 = q ** 4
+    prob_4_1_j2 = 4 * (q ** 4) * p
+    
+    prob_under_5_5 = prob_4_0_j1 + prob_4_1_j1 + prob_4_0_j2 + prob_4_1_j2
+    prob_over_5_5 = 1 - prob_under_5_5
+    
+    return {
+        "Más de 5.5": sanitize_prob(prob_over_5_5),
+        "Menos de 5.5": sanitize_prob(prob_under_5_5)
+    }
+
+def prob_a_cuota(p):
+    p_safe = sanitize_prob(p)
+    cuota = 1.0 / p_safe
+    return max(1.01, min(999.0, cuota))
+
+def calcular_yield(prob, cuota_bookie):
+    return (prob * cuota_bookie) - 1
+
+def badge_yield(y):
+    if y > 0:
+        return f"✅ +{y*100:.1f}%"
+    elif y < -0.05:
+        return f"❌ {y*100:.1f}%"
+    else:
+        return f"➖ {y*100:.1f}%"
+
+def _buscar_stat(stats_dict, keywords):
+    for k, v in stats_dict.items():
+        if any(kw in k.lower() for kw in keywords):
+            return v
+    return 0.0
+
+def buscar_jugador(nombre, db):
+    nombre_lower = nombre.strip().lower()
+    if nombre_lower in db:
+        return db[nombre_lower]
+    for k, v in db.items():
+        if nombre_lower in k or k in nombre_lower:
+            return v
+    return None
+
+def calcular_legs_por_partido_correcto(df_resultados, nombre_jugador):
+    """
+    Calcula: (legs ganados + legs perdidos) / número de partidos
+    Ejemplo: Si jugó 4-1, 4-2, 3-4 → (4+1+4+2+3+4)/3 = 18/3 = 6.0
+    """
+    if df_resultados is None or len(df_resultados) == 0:
+        return None
+    
+    nombre_lower = nombre_jugador.lower().strip()
+    legs_totales = 0
+    partidos_jugados = 0
+    
+    try:
+        for i in range(0, len(df_resultados) - 1, 2):
+            fila_j1 = df_resultados.iloc[i]
+            fila_j2 = df_resultados.iloc[i + 1]
+            
+            nombre_j1 = str(fila_j1.iloc[0]).lower().strip()
+            nombre_j2 = str(fila_j2.iloc[0]).lower().strip()
+            
+            resultado_j1 = str(fila_j1.iloc[1]) if len(fila_j1) > 1 else ""
+            resultado_j2 = str(fila_j2.iloc[1]) if len(fila_j2) > 1 else ""
+            
+            if nombre_lower in nombre_j1 or nombre_j1 in nombre_lower:
+                try:
+                    partes = resultado_j1.split('-')
+                    if len(partes) == 2:
+                        legs_j1 = int(partes[0])
+                        legs_j2 = int(partes[1])
+                        legs_totales += legs_j1 + legs_j2
+                        partidos_jugados += 1
+                except:
+                    pass
+            
+            elif nombre_lower in nombre_j2 or nombre_j2 in nombre_lower:
+                try:
+                    partes = resultado_j2.split('-')
+                    if len(partes) == 2:
+                        legs_j1 = int(partes[0])
+                        legs_j2 = int(partes[1])
+                        legs_totales += legs_j1 + legs_j2
+                        partidos_jugados += 1
+                except:
+                    pass
+        
+        if partidos_jugados > 0:
+            return legs_totales / partidos_jugados
+        return None
+    except:
+        return None
+
+def widget_mercado_compacto(mercado, prob, idx):
+    cuota_justa = prob_a_cuota(prob)
+    
+    col1, col2, col3, col4 = st.columns([3, 1.5, 1.5, 1.5])
+    
+    with col1:
+        porcentaje = int(prob * 100)
+        st.markdown(f"**{mercado}**")
+        st.progress(prob, text=f"{porcentaje}%")
+    
+    with col2:
+        st.metric("Cuota justa", f"{cuota_justa:.2f}", label_visibility="collapsed")
+        st.caption("Cuota justa")
+    
+    with col3:
+        cuota_input = st.number_input(
+            "Cuota bookie",
+            min_value=1.01,
+            max_value=50.0,
+            value=None,
+            step=0.05,
+            key=f"cuota_{idx}",
+            label_visibility="collapsed",
+            placeholder="Introduce cuota"
+        )
+        st.caption("Cuota bookie")
+    
+    with col4:
+        if cuota_input is not None and cuota_input > 0:
+            y = calcular_yield(prob, cuota_input)
+            color = "#28a745" if y > 0 else ("#dc3545" if y < -0.05 else "#6c757d")
+            st.markdown(f"<p style='font-size: 1.3em; font-weight: bold; color: {color}; margin: 0;'>{badge_yield(y)}</p>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<p style='font-size: 1.3em; font-weight: bold; color: #6c757d; margin: 0;'>➖ 0.0%</p>", unsafe_allow_html=True)
+        
+        st.caption("Yield")
+    
+    return cuota_input
+
+def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
+    color = "#1f77b4" if is_left else "#ff7f0e"
+    
+    bandera = obtener_bandera(nombre)
+    nombre_display = f"{bandera} {nombre}" if bandera else f"🎯 {nombre}"
+    
+    st.markdown(f"""
+    <div style="
+        border: 2px solid {color};
+        border-radius: 10px;
+        padding: 20px;
+        background: linear-gradient(135deg, {color}15 0%, {color}05 100%);
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    ">
+        <h3 style="color: {color}; margin: 0 0 20px 0; text-align: center;">
+            {nombre_display}
+        </h3>
+        <div style="
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            flex: 1;
+            align-items: center;
+        ">
+            <div style="text-align: center;">
+                <p style="margin: 0 0 8px 0; font-size: 0.85em; color: #666; font-weight: 500;">Power Ranking</p>
+                <p style="margin: 0; font-size: 2em; font-weight: bold; color: {color};">{pr:.1f}</p>
+            </div>
+            <div style="text-align: center;">
+                <p style="margin: 0 0 8px 0; font-size: 0.85em; color: #666; font-weight: 500;">λ 180s</p>
+                <p style="margin: 0; font-size: 2em; font-weight: bold; color: {color};">{lam_180:.2f}</p>
+            </div>
+            <div style="text-align: center; grid-column: 1 / -1;">
+                <p style="margin: 0 0 8px 0; font-size: 0.85em; color: #666; font-weight: 500;">λ Legs</p>
+                <p style="margin: 0; font-size: 2em; font-weight: bold; color: {color};">{lam_legs:.2f}</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════
 # SIDEBAR - NAVEGACIÓN
@@ -302,7 +620,132 @@ if opcion == "🔴 LIVE":
 # 💰 VALUE BETS
 elif opcion == "💰 VALUE BETS":
     st.title("💰 VALUE BETS")
-    st.info("⚠️ Sección de Value Bets - Mejora visual en próximas fases")
+    
+    with st.expander("⚙️ Configuración", expanded=True):
+        fuente = st.selectbox(
+            "📂 Fuente de datos:",
+            PESTANAS_CON_STATS,
+            key="vb_fuente"
+        )
+    
+    with st.spinner(f"Cargando datos de '{fuente}'..."):
+        db_jugadores = cargar_jugadores_desde(fuente)
+    
+    if not db_jugadores:
+        st.warning(f"⚠️ No se encontraron jugadores en '{fuente}'.")
+    else:
+        nombres_disponibles = sorted([v["nombre_original"] for v in db_jugadores.values()])
+        
+        if fuente in st.session_state.last_update:
+            tiempo_transcurrido = (datetime.now() - st.session_state.last_update[fuente]).seconds
+            st.info(f"📊 {len(nombres_disponibles)} jugadores | ⏱️ Actualizado hace {tiempo_transcurrido}s")
+        
+        st.markdown("### 🥊 Seleccionar Enfrentamiento")
+        
+        if st.session_state.vb_j1 is None or st.session_state.vb_j1 not in nombres_disponibles:
+            st.session_state.vb_j1 = nombres_disponibles[0]
+        if st.session_state.vb_j2 is None or st.session_state.vb_j2 not in nombres_disponibles:
+            opciones_j2 = [n for n in nombres_disponibles if n != st.session_state.vb_j1]
+            st.session_state.vb_j2 = opciones_j2[0] if opciones_j2 else nombres_disponibles[0]
+        
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col1:
+            j1_sel = st.selectbox(
+                "Jugador 1",
+                nombres_disponibles,
+                index=nombres_disponibles.index(st.session_state.vb_j1),
+                key="sel_j1"
+            )
+            st.session_state.vb_j1 = j1_sel
+        
+        with col2:
+            opciones_j2 = [n for n in nombres_disponibles if n != j1_sel]
+            if st.session_state.vb_j2 not in opciones_j2:
+                st.session_state.vb_j2 = opciones_j2[0] if opciones_j2 else nombres_disponibles[0]
+            
+            j2_sel = st.selectbox(
+                "Jugador 2",
+                opciones_j2,
+                index=opciones_j2.index(st.session_state.vb_j2) if st.session_state.vb_j2 in opciones_j2 else 0,
+                key="sel_j2"
+            )
+            st.session_state.vb_j2 = j2_sel
+        
+        with col3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🔢 Calcular", type="primary", use_container_width=True):
+                st.session_state.vb_calcular = True
+        
+        if st.session_state.vb_calcular:
+            j1 = buscar_jugador(j1_sel, db_jugadores)
+            j2 = buscar_jugador(j2_sel, db_jugadores)
+            
+            if j1 and j2:
+                pr1, pr2 = j1["PR"], j2["PR"]
+                lam1, lam2 = j1["lam_180"], j2["lam_180"]
+                legs1, legs2 = j1["lam_legs"], j2["lam_legs"]
+                
+                st.markdown("---")
+                st.markdown("### 📊 Comparativa")
+                
+                col_j1, col_vs, col_j2 = st.columns([10, 2, 10])
+                with col_j1:
+                    tarjeta_jugador(j1['nombre_original'], pr1, lam1, legs1, is_left=True)
+                with col_vs:
+                    st.markdown("<div style='height: 100%; display: flex; align-items: center; justify-content: center;'><h1 style='margin: 0; color: #666; font-size: 2.5em; font-weight: bold;'>VS</h1></div>", unsafe_allow_html=True)
+                with col_j2:
+                    tarjeta_jugador(j2['nombre_original'], pr2, lam2, legs2, is_left=False)
+                
+                st.markdown("---")
+                st.markdown("### 🎲 Mercados")
+                
+                v1, v2 = prob_victoria(pr1, pr2)
+                m180 = prob_180s(lam1, lam2)
+                p_j1_mas, p_emp, p_j2_mas = quien_hace_mas_180s(lam1, lam2)
+                hcaps = handicaps_legs(v1, v2)
+                legs_dict = legs_totales(legs1, legs2)
+                
+                tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏆 Victoria", "🎯 180s", "🥇 Más 180s", "📐 Hándicaps", "📊 Legs"])
+                
+                with tab1:
+                    st.markdown("#### Mercado Victoria")
+                    widget_mercado_compacto(f"{j1['nombre_original']}", v1, "v1")
+                    widget_mercado_compacto(f"{j2['nombre_original']}", v2, "v2")
+                
+                with tab2:
+                    st.markdown("#### Mercado 180s")
+                    mercados_180 = [
+                        (f"{j1['nombre_original']} +0.5", m180["J1 +0.5"]),
+                        (f"{j1['nombre_original']} +1.5", m180["J1 +1.5"]),
+                        (f"{j2['nombre_original']} +0.5", m180["J2 +0.5"]),
+                        (f"{j2['nombre_original']} +1.5", m180["J2 +1.5"]),
+                        ("Ambos +1.5", m180["Ambos +1.5"]),
+                        ("Ambos +2.5", m180["Ambos +2.5"]),
+                    ]
+                    for idx, (mercado, prob) in enumerate(mercados_180):
+                        widget_mercado_compacto(mercado, prob, f"180_{idx}")
+                
+                with tab3:
+                    st.markdown("#### ¿Quién hace más 180s?")
+                    widget_mercado_compacto(f"{j1['nombre_original']}", p_j1_mas, "mas_j1")
+                    widget_mercado_compacto("Empate", p_emp, "mas_emp")
+                    widget_mercado_compacto(f"{j2['nombre_original']}", p_j2_mas, "mas_j2")
+                
+                with tab4:
+                    st.markdown("#### Hándicaps")
+                    hcaps_lista = [
+                        (f"{j1['nombre_original']} -1.5", hcaps["J1 -1.5 Legs"]),
+                        (f"{j1['nombre_original']} +1.5", hcaps["J1 +1.5 Legs"]),
+                        (f"{j2['nombre_original']} -1.5", hcaps["J2 -1.5 Legs"]),
+                        (f"{j2['nombre_original']} +1.5", hcaps["J2 +1.5 Legs"]),
+                    ]
+                    for idx, (mercado, prob) in enumerate(hcaps_lista):
+                        widget_mercado_compacto(mercado, prob, f"hcap_{idx}")
+                
+                with tab5:
+                    st.markdown("#### Total Legs")
+                    widget_mercado_compacto("Más de 5.5", legs_dict["Más de 5.5"], "legs_mas")
+                    widget_mercado_compacto("Menos de 5.5", legs_dict["Menos de 5.5"], "legs_menos")
 
 # 📊 RESULTADOS
 elif opcion == "📊 RESULTADOS":
@@ -320,12 +763,10 @@ elif opcion == "📊 RESULTADOS":
         tiempo = (datetime.now() - st.session_state.last_update[sel]).seconds
         st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
     
-    # TABLA DE RESULTADOS
     if d1 is not None and len(d1) > 0:
         st.subheader("⚔️ Resultados")
         st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
     
-    # ESTADÍSTICAS POR JUGADOR
     if d2 is not None and len(d2) > 0:
         st.subheader("📈 Estadísticas por Jugador")
         
@@ -335,17 +776,25 @@ elif opcion == "📊 RESULTADOS":
             
             with st.expander(player_display, expanded=False):
                 for etiqueta in ESTADISTICAS_MOSTRAR:
+                    
+                    # ESPECIAL: Legs por partido - calcular desde resultados
+                    if "legs" in etiqueta.lower() and "partido" in etiqueta.lower():
+                        legs_corregido = calcular_legs_por_partido_correcto(d1, player)
+                        if legs_corregido is not None:
+                            st.write(f"**{etiqueta}:** {legs_corregido:.2f}")
+                        else:
+                            st.write(f"**{etiqueta}:** -")
+                        continue
+                    
                     valor = "-"
                     keywords = [kw for kw in etiqueta.lower().split() if len(kw) > 3]
                     
-                    # Buscar el valor en stats
                     for k, v in stats.items():
                         if any(kw in k.lower() for kw in keywords):
                             valor = v
                             break
                     
                     if valor != "-":
-                        # VERIFICAR si debe mostrar tendencia
                         debe_tendencia = any(
                             metrica in etiqueta.lower()
                             for metrica in METRICAS_CON_TENDENCIA
