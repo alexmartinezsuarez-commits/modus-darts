@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import poisson
 from datetime import datetime
+import requests
 
 st.set_page_config(page_title="Modus Super Series App", layout="wide", page_icon="🎯")
 
@@ -33,6 +34,65 @@ CORTES = {
 }
 
 PESTANAS_CON_STATS = [k for k in URLS if k not in ("Value Bets",)]
+
+# ═══════════════════════════════════════════════════════════════
+# FASE 4: MAPEO DE JUGADORES A PAÍSES
+# ═══════════════════════════════════════════════════════════════
+JUGADORES_PAISES = {
+    # Mapeo manual de jugadores conocidos (puedes ampliarlo)
+    "luke littler": "GB",
+    "michael van gerwen": "NL",
+    "gary anderson": "GB",
+    "peter wright": "GB",
+    "gerwyn price": "GB",
+    "jonny clayton": "GB",
+    "james wade": "GB",
+    "dave chisnall": "GB",
+    "rob cross": "GB",
+    "nathan aspinall": "GB",
+    "dimitri van den bergh": "BE",
+    "jose de sousa": "PT",
+    "dirk van duijvenbode": "NL",
+    "danny noppert": "NL",
+    "chris dobey": "GB",
+    "josh rock": "GB",
+    "luke humphries": "GB",
+    "raymond van barneveld": "NL",
+    "michael smith": "GB",
+    "ross smith": "GB",
+    "stephen bunting": "GB",
+    "damon heta": "AU",
+    "martin schindler": "DE",
+    "gabriel clemens": "DE",
+    "andrew gilding": "GB",
+    "brendan dolan": "GB",
+    "kim huybrechts": "BE",
+    "ritchie edhouse": "GB",
+    "ryan searle": "GB",
+    "callan rydz": "GB",
+    "joe cullen": "GB",
+    "cameron menzies": "GB",
+    "connor scutt": "GB",
+    "matt campbell": "CA",
+    "wessel nijman": "NL",
+    "jermaine wattimena": "NL",
+    "gian van veen": "NL",
+    "ricardo pietreczko": "DE",
+    "florian hempel": "DE",
+    "krzysztof ratajski": "PL",
+    "keane barry": "IE",
+    "william o'connor": "IE",
+    "ciaran teeters": "IE",
+    "benito van de pas": "NL",
+    "glenn de_bois": "GB",
+    "nick kenny": "GB",
+    "nathan rafferty": "GB",
+    "alexis toylo": "BE",
+    "dylan slevin": "IE",
+    "jurjen van_der_velde": "NL",
+    "benito van_de_pas": "NL",
+    "glenn de bois": "GB",
+}
 
 # ═══════════════════════════════════════════════════════════════
 # SESSION STATE
@@ -190,6 +250,127 @@ def cargar_jugadores_desde(pestana: str):
         st.error(f"Error cargando {pestana}: {e}")
         return {}
 
+# ═══════════════════════════════════════════════════════════════
+# FASE 4: FUNCIONES DE BANDERAS Y H2H
+# ═══════════════════════════════════════════════════════════════
+
+def obtener_bandera(nombre_jugador):
+    """
+    Obtiene la bandera del jugador usando el mapeo manual.
+    Devuelve la URL de la bandera o None.
+    """
+    nombre_lower = nombre_jugador.lower().strip()
+    
+    # Normalizar nombres con guiones bajos
+    nombre_normalizado = nombre_lower.replace("_", " ")
+    
+    # Buscar en el mapeo
+    codigo_pais = JUGADORES_PAISES.get(nombre_normalizado, None)
+    
+    if codigo_pais:
+        # Usar la API de flagcdn.com para obtener banderas SVG
+        return f"https://flagcdn.com/w40/{codigo_pais.lower()}.png"
+    
+    return None
+
+def calcular_tendencia(valor_actual, valor_anterior):
+    """
+    Calcula la tendencia comparando valor actual con anterior.
+    Retorna: '↑' (subiendo), '↓' (bajando), '→' (estable)
+    """
+    if valor_anterior == 0:
+        return '→'
+    
+    diferencia = ((valor_actual - valor_anterior) / valor_anterior) * 100
+    
+    if diferencia > 2:
+        return '↑'
+    elif diferencia < -2:
+        return '↓'
+    else:
+        return '→'
+
+@st.cache_data(ttl=300)
+def extraer_h2h_semanal(j1_nombre, j2_nombre):
+    """
+    Extrae el historial H2H de todos los días de la semana.
+    Busca enfrentamientos directos en las tablas de partidos.
+    """
+    h2h_data = {
+        "victorias_j1": 0,
+        "victorias_j2": 0,
+        "partidos": []
+    }
+    
+    dias_semana = [
+        "Grupo A Lunes", "Grupo A Martes", "Grupo A Miércoles",
+        "Grupo C Jueves", "Grupo B Jueves",
+        "Grupo C Viernes", "Grupo B Viernes",
+        "Final Sábado"
+    ]
+    
+    for dia in dias_semana:
+        try:
+            df_partidos, _ = cargar_todo(URLS[dia], dia, CORTES[dia])
+            
+            if df_partidos is None:
+                continue
+            
+            # Buscar enfrentamientos entre j1 y j2
+            for idx, row in df_partidos.iterrows():
+                jugador1 = str(row.iloc[0]).strip().lower() if len(row) > 0 else ""
+                jugador2 = str(row.iloc[1]).strip().lower() if len(row) > 1 else ""
+                
+                j1_lower = j1_nombre.lower().strip()
+                j2_lower = j2_nombre.lower().strip()
+                
+                # Verificar si es un enfrentamiento entre j1 y j2
+                es_enfrentamiento = (
+                    (jugador1 in j1_lower or j1_lower in jugador1) and
+                    (jugador2 in j2_lower or j2_lower in jugador2)
+                ) or (
+                    (jugador1 in j2_lower or j2_lower in jugador1) and
+                    (jugador2 in j1_lower or j1_lower in jugador2)
+                )
+                
+                if es_enfrentamiento and len(row) > 2:
+                    # Extraer marcador
+                    marcador = str(row.iloc[2]).strip()
+                    
+                    # Determinar ganador
+                    if '-' in marcador:
+                        legs = marcador.split('-')
+                        if len(legs) == 2:
+                            legs_j1 = safe_float(legs[0])
+                            legs_j2 = safe_float(legs[1])
+                            
+                            if legs_j1 > legs_j2:
+                                ganador = jugador1
+                                if jugador1 in j1_lower or j1_lower in jugador1:
+                                    h2h_data["victorias_j1"] += 1
+                                else:
+                                    h2h_data["victorias_j2"] += 1
+                            elif legs_j2 > legs_j1:
+                                ganador = jugador2
+                                if jugador2 in j1_lower or j1_lower in jugador2:
+                                    h2h_data["victorias_j1"] += 1
+                                else:
+                                    h2h_data["victorias_j2"] += 1
+                            else:
+                                ganador = "Empate"
+                            
+                            h2h_data["partidos"].append({
+                                "dia": dia,
+                                "jugador1": jugador1.title(),
+                                "jugador2": jugador2.title(),
+                                "marcador": marcador,
+                                "ganador": ganador.title()
+                            })
+        except:
+            continue
+    
+    return h2h_data
+
 # ─────────────────────────────────────────────
 # MATEMÁTICAS VALUE BETS
 # ─────────────────────────────────────────────
@@ -313,12 +494,16 @@ def buscar_jugador(nombre, db):
     return None
 
 # ═══════════════════════════════════════════════════════════════
-# WIDGETS VISUALES - FASE 3 CORREGIDA
+# WIDGETS VISUALES CON BANDERAS
 # ═══════════════════════════════════════════════════════════════
 
 def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
-    """Tarjeta visual SIMÉTRICA con stats del jugador."""
+    """Tarjeta visual SIMÉTRICA con stats del jugador Y BANDERA."""
     color = "#1f77b4" if is_left else "#ff7f0e"
+    
+    # Obtener bandera
+    bandera_url = obtener_bandera(nombre)
+    bandera_html = f'<img src="{bandera_url}" style="width: 30px; height: 20px; margin-left: 10px; vertical-align: middle; border-radius: 3px;">' if bandera_url else ''
     
     st.markdown(f"""
     <div style="
@@ -330,7 +515,9 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
         display: flex;
         flex-direction: column;
     ">
-        <h3 style="color: {color}; margin: 0 0 20px 0; text-align: center;">🎯 {nombre}</h3>
+        <h3 style="color: {color}; margin: 0 0 20px 0; text-align: center;">
+            🎯 {nombre} {bandera_html}
+        </h3>
         <div style="
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -355,10 +542,7 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
     """, unsafe_allow_html=True)
 
 def widget_mercado_compacto(mercado, prob, idx):
-    """
-    Widget compacto que DEVUELVE la cuota introducida.
-    NO registra nada internamente.
-    """
+    """Widget compacto que DEVUELVE la cuota introducida."""
     cuota_justa = prob_a_cuota(prob)
     
     col1, col2, col3, col4 = st.columns([3, 1.5, 1.5, 1.5])
@@ -395,13 +579,11 @@ def widget_mercado_compacto(mercado, prob, idx):
         
         st.caption("Yield")
     
-    # DEVOLVER la cuota para que la función principal la procese
     return cuota_input
 
 def render_value_bets():
     st.title("💰 Value Bets — Motor de Probabilidades")
     
-    # Lista local para recopilar value bets (NO usar session_state aquí)
     value_bets_list = []
     
     # ── CONFIGURACIÓN ──
@@ -479,11 +661,10 @@ def render_value_bets():
     lam1, lam2   = j1["lam_180"],  j2["lam_180"]
     legs1, legs2 = j1["lam_legs"], j2["lam_legs"]
 
-    # ── COMPARATIVA VISUAL SIMÉTRICA ──
+    # ── COMPARATIVA VISUAL SIMÉTRICA CON BANDERAS ──
     st.markdown("---")
     st.markdown("### 📊 Comparativa de Jugadores")
     
-    # Columnas exactamente iguales con VS centrado
     col_j1, col_vs, col_j2 = st.columns([10, 2, 10])
     
     with col_j1:
@@ -509,19 +690,44 @@ def render_value_bets():
     with col_j2:
         tarjeta_jugador(j2['nombre_original'], pr2, lam2, legs2, is_left=False)
 
-    # Calcular todas las probabilidades
+    # ── HEAD TO HEAD SEMANAL ──
+    st.markdown("---")
+    st.markdown("### 🔥 Head to Head Semanal")
+    
+    with st.spinner("Analizando enfrentamientos directos..."):
+        h2h = extraer_h2h_semanal(j1['nombre_original'], j2['nombre_original'])
+    
+    if h2h["partidos"]:
+        col_h1, col_h2, col_h3 = st.columns([1, 1, 1])
+        
+        with col_h1:
+            st.metric(f"Victorias {j1['nombre_original']}", h2h["victorias_j1"])
+        
+        with col_h2:
+            total_partidos = len(h2h["partidos"])
+            st.metric("Partidos Totales", total_partidos)
+        
+        with col_h3:
+            st.metric(f"Victorias {j2['nombre_original']}", h2h["victorias_j2"])
+        
+        # Mostrar historial
+        with st.expander("📋 Ver historial de enfrentamientos"):
+            for partido in h2h["partidos"]:
+                st.markdown(f"**{partido['dia']}**: {partido['jugador1']} vs {partido['jugador2']} - **{partido['marcador']}** (Ganador: {partido['ganador']})")
+    else:
+        st.info("ℹ️ No se encontraron enfrentamientos directos esta semana")
+
+    # Calcular probabilidades
     v1, v2 = prob_victoria(pr1, pr2)
     m180 = prob_180s(lam1, lam2)
     p_j1_mas, p_emp, p_j2_mas = quien_hace_mas_180s(lam1, lam2)
     hcaps = handicaps_legs(v1, v2)
     legs_total_dict = legs_totales(legs1, legs2)
 
-    # ── FUNCIÓN AUXILIAR PARA RECOPILAR VALUE BETS ──
     def procesar_mercado(mercado, prob, cuota_input):
-        """Procesa un mercado y devuelve datos si tiene value."""
         if cuota_input is not None and cuota_input > 0:
             y = calcular_yield(prob, cuota_input)
-            if y > 0:  # Solo registrar si hay value positivo
+            if y > 0:
                 cuota_justa = prob_a_cuota(prob)
                 return {
                     "Mercado": mercado,
@@ -532,11 +738,11 @@ def render_value_bets():
                 }
         return None
 
-    # ── MERCADOS ORGANIZADOS POR TABS ──
+    # ── MERCADOS ──
     st.markdown("---")
     st.markdown("### 🎲 Mercados Disponibles")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏆 Victoria", "🎯 180s", "🥇 ¿Quién hace más?", "📐 Hándicaps", "📊 Totales"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏆 Victoria", "🎯 180s", "🥇 ¿Quién hace más 180?", "📐 Hándicaps", "📊 Total Legs"])
     
     with tab1:
         st.markdown("#### 🏆 Mercado de Victoria")
@@ -595,7 +801,7 @@ def render_value_bets():
             if vb: value_bets_list.append(vb)
     
     with tab5:
-        st.markdown("#### 📊 Legs Totales (First to 4)")
+        st.markdown("#### 📊 Total Legs (First to 4)")
         st.caption("Basado en distribución binomial negativa — Under 5.5 = marcadores 4-0 y 4-1")
         c1 = widget_mercado_compacto("Más de 5.5 Legs", legs_total_dict["Más de 5.5"], "legs_mas")
         vb = procesar_mercado("Más de 5.5 Legs", legs_total_dict["Más de 5.5"], c1)
@@ -610,10 +816,8 @@ def render_value_bets():
         st.markdown("---")
         st.markdown("### 💎 Resumen de Value Bets Encontradas")
         
-        # Ordenar por yield descendente
         value_bets_list.sort(key=lambda x: x["Yield"], reverse=True)
         
-        # Mostrar cada value bet en una tarjeta visual
         for vb in value_bets_list:
             yield_pct = vb["Yield"] * 100
             
