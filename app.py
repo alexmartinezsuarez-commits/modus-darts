@@ -195,17 +195,44 @@ def handicaps_legs(v1, v2):
 
 def legs_totales(lam_legs1, lam_legs2):
     """
-    CORRECCIÓN: Lambda total = SUMA de legs esperados
-    (cada leg lo gana uno u otro, por lo que se suman)
-    """
-    lam_total = lam_legs1 + lam_legs2  # SUMA, no media
+    Calcula probabilidades de Over/Under 5.5 legs totales
+    en un partido al mejor de 7 legs (first to 4).
     
-    prob_mas_5_5 = sanitize_prob(1 - poisson.cdf(5, lam_total))
-    prob_menos_5_5 = sanitize_prob(poisson.cdf(5, lam_total))
+    Usa distribución binomial negativa:
+    - Under 5.5 = marcadores 4-0, 4-1, 0-4, 1-4
+    - Over 5.5 = todos los demás marcadores (4-2, 4-3, etc.)
+    
+    Fórmula:
+    p = Media_J1 / (Media_J1 + Media_J2)
+    P(Under 5.5) = p^4 + 4*p^4*q + q^4 + 4*q^4*p
+    """
+    # Probabilidad de que J1 gane un leg individual
+    if lam_legs1 + lam_legs2 == 0:
+        p = 0.5
+    else:
+        p = lam_legs1 / (lam_legs1 + lam_legs2)
+    
+    q = 1 - p  # Probabilidad de que J2 gane un leg
+    
+    # Under 5.5 = marcadores 4-0, 4-1, 0-4, 1-4
+    # J1 gana 4-0: p^4
+    prob_4_0_j1 = p ** 4
+    
+    # J1 gana 4-1: C(4,3) * p^4 * q^1 = 4 * p^4 * q
+    prob_4_1_j1 = 4 * (p ** 4) * q
+    
+    # J2 gana 4-0: q^4
+    prob_4_0_j2 = q ** 4
+    
+    # J2 gana 4-1: C(4,3) * q^4 * p^1 = 4 * q^4 * p
+    prob_4_1_j2 = 4 * (q ** 4) * p
+    
+    prob_under_5_5 = prob_4_0_j1 + prob_4_1_j1 + prob_4_0_j2 + prob_4_1_j2
+    prob_over_5_5 = 1 - prob_under_5_5
     
     return {
-        "Más de 5.5": prob_mas_5_5,
-        "Menos de 5.5": prob_menos_5_5
+        "Más de 5.5": sanitize_prob(prob_over_5_5),
+        "Menos de 5.5": sanitize_prob(prob_under_5_5)
     }
 
 def prob_a_cuota(p):
@@ -479,9 +506,10 @@ def render_value_bets():
         widget_cuota(etiq, hcaps[k], f"hcap_{idx}")
         idx += 1
 
-    # ── 5. LEGS TOTALES (CORREGIDO) ──
+    # ── 5. LEGS TOTALES (BINOMIAL NEGATIVA) ──
     st.markdown("---")
-    st.markdown("#### 📊 Legs Totales")
+    st.markdown("#### 📊 Legs Totales (First to 4)")
+    st.caption("Basado en distribución binomial negativa — Under 5.5 = marcadores 4-0 y 4-1")
     legs_total_dict = legs_totales(legs1, legs2)
     widget_cuota("Más de 5.5 Legs", legs_total_dict["Más de 5.5"], "legs_mas")
     widget_cuota("Menos de 5.5 Legs", legs_total_dict["Menos de 5.5"], "legs_menos")
