@@ -35,95 +35,36 @@ CORTES = {
 PESTANAS_CON_STATS = [k for k in URLS if k not in ("Value Bets",)]
 
 # ═══════════════════════════════════════════════════════════════
-# DICCIONARIO DE EMOJIS DE BANDERAS
+# BANDERAS DE PAÍSES (EMOJIS)
 # ═══════════════════════════════════════════════════════════════
 BANDERAS = {
-    "GB": "🇬🇧",
-    "NL": "🇳🇱",
-    "BE": "🇧🇪",
-    "PT": "🇵🇹",
-    "AU": "🇦🇺",
-    "DE": "🇩🇪",
-    "PL": "🇵🇱",
-    "IE": "🇮🇪",
-    "CA": "🇨🇦",
+    "GB": "🇬🇧", "NL": "🇳🇱", "BE": "🇧🇪", "PT": "🇵🇹",
+    "AU": "🇦🇺", "DE": "🇩🇪", "PL": "🇵🇱", "IE": "🇮🇪",
+    "CA": "🇨🇦", "ES": "🇪🇸", "FR": "🇫🇷"
 }
 
 # ═══════════════════════════════════════════════════════════════
-# MAPEO DE JUGADORES A PAÍSES (REVISADO Y LIMPIADO)
+# MAPEO COMPLETO DE JUGADORES A PAÍSES
 # ═══════════════════════════════════════════════════════════════
 JUGADORES_PAISES = {
-    # Reino Unido
-    "luke littler": "GB",
-    "gary anderson": "GB",
-    "peter wright": "GB",
-    "gerwyn price": "GB",
-    "jonny clayton": "GB",
-    "james wade": "GB",
-    "dave chisnall": "GB",
-    "rob cross": "GB",
-    "nathan aspinall": "GB",
-    "chris dobey": "GB",
-    "josh rock": "GB",
-    "luke humphries": "GB",
-    "michael smith": "GB",
-    "ross smith": "GB",
-    "stephen bunting": "GB",
-    "andrew gilding": "GB",
-    "brendan dolan": "GB",
-    "ritchie edhouse": "GB",
-    "ryan searle": "GB",
-    "callan rydz": "GB",
-    "joe cullen": "GB",
-    "cameron menzies": "GB",
-    "connor scutt": "GB",
-    "glenn de bois": "GB",
-    "nick kenny": "GB",
-    "nathan rafferty": "GB",
-    "steve west": "GB",
-    "neil duff": "GB",
-    "johnny haines": "GB",
-    "joe heywood": "GB",
-    
-    # Países Bajos
-    "michael van gerwen": "NL",
-    "dirk van duijvenbode": "NL",
-    "danny noppert": "NL",
-    "raymond van barneveld": "NL",
-    "wessel nijman": "NL",
-    "jermaine wattimena": "NL",
-    "gian van veen": "NL",
-    "benito van de pas": "NL",
-    "jurjen van der velde": "NL",
-    
-    # Bélgica
-    "dimitri van den bergh": "BE",
-    "kim huybrechts": "BE",
-    "alexis toylo": "BE",
-    
-    # Portugal
-    "jose de sousa": "PT",
-    
-    # Australia
-    "damon heta": "AU",
-    
-    # Alemania
-    "martin schindler": "DE",
-    "gabriel clemens": "DE",
-    "ricardo pietreczko": "DE",
-    "florian hempel": "DE",
-    
-    # Polonia
-    "krzysztof ratajski": "PL",
-    
-    # Irlanda
-    "keane barry": "IE",
-    "william o'connor": "IE",
-    "ciaran teeters": "IE",
-    "dylan slevin": "IE",
-    
-    # Canadá
-    "matt campbell": "CA",
+    "luke littler": "GB", "michael van gerwen": "NL", "gary anderson": "GB",
+    "peter wright": "GB", "gerwyn price": "GB", "jonny clayton": "GB",
+    "james wade": "GB", "dave chisnall": "GB", "rob cross": "GB",
+    "nathan aspinall": "GB", "chris dobey": "GB", "josh rock": "GB",
+    "luke humphries": "GB", "michael smith": "GB", "ross smith": "GB",
+    "stephen bunting": "GB", "andrew gilding": "GB", "brendan dolan": "GB",
+    "ritchie edhouse": "GB", "ryan searle": "GB", "callan rydz": "GB",
+    "joe cullen": "GB", "cameron menzies": "GB", "connor scutt": "GB",
+    "glenn de bois": "GB", "nick kenny": "GB", "nathan rafferty": "GB",
+    "steve west": "GB", "neil duff": "GB", "johnny haines": "GB",
+    "joe heywood": "GB", "dirk van duijvenbode": "NL", "danny noppert": "NL",
+    "raymond van barneveld": "NL", "wessel nijman": "NL", "jermaine wattimena": "NL",
+    "gian van veen": "NL", "benito van de pas": "NL", "jurjen van der velde": "NL",
+    "dimitri van den bergh": "BE", "kim huybrechts": "BE", "alexis toylo": "BE",
+    "jose de sousa": "PT", "damon heta": "AU", "martin schindler": "DE",
+    "gabriel clemens": "DE", "ricardo pietreczko": "DE", "florian hempel": "DE",
+    "krzysztof ratajski": "PL", "keane barry": "IE", "william o'connor": "IE",
+    "ciaran teeters": "IE", "dylan slevin": "IE", "matt campbell": "CA",
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -141,7 +82,7 @@ if "last_update" not in st.session_state:
     st.session_state.last_update = {}
 
 # ─────────────────────────────────────────────
-# FUNCIONES AUXILIARES GENERALES
+# FUNCIONES AUXILIARES
 # ─────────────────────────────────────────────
 def arreglar_columnas(df):
     nuevas_cols = []
@@ -283,7 +224,7 @@ def cargar_jugadores_desde(pestana: str):
         return {}
 
 # ═══════════════════════════════════════════════════════════════
-# FUNCIONES DE BANDERAS Y H2H
+# FUNCIONES DE BANDERAS Y TENDENCIAS (UMBRAL 10%)
 # ═══════════════════════════════════════════════════════════════
 
 def obtener_bandera(nombre_jugador):
@@ -293,29 +234,70 @@ def obtener_bandera(nombre_jugador):
     
     if codigo_pais and codigo_pais in BANDERAS:
         return BANDERAS[codigo_pais]
-    
     return None
 
-def calcular_tendencia(valor_actual, valor_anterior):
-    """Calcula la tendencia comparando valor actual con anterior."""
-    if valor_anterior == 0:
-        return '→'
+def calcular_tendencia_stat(valor_actual, media_previa, umbral=10.0):
+    """
+    Calcula tendencia con umbral de 10%.
+    Si diferencia > 10% → 'up' (🔼)
+    Si diferencia < -10% → 'down' (🔽)
+    Si similar → 'neutral'
+    """
+    if valor_actual is None or media_previa is None or media_previa == 0:
+        return 'neutral'
     
-    diferencia = ((valor_actual - valor_anterior) / valor_anterior) * 100
-    
-    if diferencia > 2:
-        return '↑'
-    elif diferencia < -2:
-        return '↓'
+    try:
+        diferencia_pct = abs((valor_actual - media_previa) / media_previa) * 100
+        
+        if (valor_actual - media_previa) > 0 and diferencia_pct > umbral:
+            return 'up'
+        elif (valor_actual - media_previa) < 0 and diferencia_pct > umbral:
+            return 'down'
+        else:
+            return 'neutral'
+    except:
+        return 'neutral'
+
+def emoji_tendencia(tendencia):
+    """Retorna emoji según tendencia."""
+    if tendencia == 'up':
+        return '🔼'
+    elif tendencia == 'down':
+        return '🔽'
     else:
-        return '→'
+        return ''
+
+def calcular_media_stats(stats_dict, keywords):
+    """Calcula la media de una estadística."""
+    valores = []
+    for k, v in stats_dict.items():
+        for kw in keywords:
+            if kw.lower() in k.lower():
+                try:
+                    valor = float(str(v).replace(',', '.').strip())
+                    if np.isfinite(valor):
+                        valores.append(valor)
+                except:
+                    pass
+    
+    if valores and len(valores) > 1:
+        return np.mean(valores)
+    return None
+
+def extraer_ultimo_valor(stats_dict, keywords):
+    """Extrae el último valor de una estadística."""
+    for k, v in stats_dict.items():
+        for kw in keywords:
+            if kw.lower() in k.lower():
+                try:
+                    return float(str(v).replace(',', '.').strip())
+                except:
+                    pass
+    return None
 
 @st.cache_data(ttl=300)
 def extraer_h2h_semanal(j1_nombre, j2_nombre):
-    """
-    Extrae el historial H2H de todos los días de la semana.
-    ESTRUCTURA: Cada partido son 2 filas consecutivas (J1 en par, J2 en impar).
-    """
+    """Extrae H2H semanal - estructura 2 filas por partido."""
     h2h_data = {
         "victorias_j1": 0,
         "victorias_j2": 0,
@@ -339,16 +321,13 @@ def extraer_h2h_semanal(j1_nombre, j2_nombre):
             if df_partidos is None or len(df_partidos) < 2:
                 continue
             
-            # Leer cada 2 filas como un partido
             for i in range(0, len(df_partidos) - 1, 2):
                 fila_j1 = df_partidos.iloc[i]
                 fila_j2 = df_partidos.iloc[i + 1]
                 
-                # Extraer nombres (primera columna)
                 nombre_j1 = str(fila_j1.iloc[0]).strip().lower().replace("_", " ")
                 nombre_j2 = str(fila_j2.iloc[0]).strip().lower().replace("_", " ")
                 
-                # Verificar si es el enfrentamiento buscado
                 es_enfrentamiento = (
                     (j1_lower in nombre_j1 or nombre_j1 in j1_lower) and
                     (j2_lower in nombre_j2 or nombre_j2 in j2_lower)
@@ -358,11 +337,9 @@ def extraer_h2h_semanal(j1_nombre, j2_nombre):
                 )
                 
                 if es_enfrentamiento:
-                    # Extraer resultados (segunda columna típicamente)
                     resultado_j1 = str(fila_j1.iloc[1]).strip() if len(fila_j1) > 1 else ""
                     resultado_j2 = str(fila_j2.iloc[1]).strip() if len(fila_j2) > 1 else ""
                     
-                    # Determinar ganador: quien tiene "4" gana
                     ganador = None
                     marcador = f"{resultado_j1}-{resultado_j2}"
                     
@@ -387,7 +364,7 @@ def extraer_h2h_semanal(j1_nombre, j2_nombre):
                             "marcador": marcador,
                             "ganador": ganador
                         })
-        except Exception as e:
+        except:
             continue
     
     return h2h_data
@@ -485,9 +462,6 @@ def prob_a_cuota(p):
     cuota = 1.0 / p_safe
     return max(1.01, min(999.0, cuota))
 
-def pct(p):
-    return f"{p * 100:.1f}%"
-
 def calcular_yield(prob, cuota_bookie):
     return (prob * cuota_bookie) - 1
 
@@ -519,7 +493,7 @@ def buscar_jugador(nombre, db):
 # ═══════════════════════════════════════════════════════════════
 
 def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
-    """Tarjeta visual SIMÉTRICA con stats del jugador Y BANDERA."""
+    """Tarjeta visual SIMÉTRICA con bandera."""
     color = "#1f77b4" if is_left else "#ff7f0e"
     
     bandera = obtener_bandera(nombre)
@@ -562,7 +536,7 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
     """, unsafe_allow_html=True)
 
 def widget_mercado_compacto(mercado, prob, idx):
-    """Widget compacto que DEVUELVE la cuota introducida."""
+    """Widget compacto de mercado."""
     cuota_justa = prob_a_cuota(prob)
     
     col1, col2, col3, col4 = st.columns([3, 1.5, 1.5, 1.5])
@@ -714,14 +688,10 @@ def render_value_bets():
         h2h = extraer_h2h_semanal(j1['nombre_original'], j2['nombre_original'])
     
     if h2h["partidos"]:
-        col_h1, col_h2, col_h3 = st.columns([1, 1, 1])
+        col_h1, col_h3 = st.columns([1, 1])
         
         with col_h1:
             st.metric(f"Victorias {j1['nombre_original']}", h2h["victorias_j1"])
-        
-        with col_h2:
-            total_partidos = len(h2h["partidos"])
-            st.metric("Partidos Totales", total_partidos)
         
         with col_h3:
             st.metric(f"Victorias {j2['nombre_original']}", h2h["victorias_j2"])
@@ -890,7 +860,7 @@ if sel in st.session_state.last_update:
     st.sidebar.info(f"📅 **{sel}**\n\n⏱️ Actualizado hace **{tiempo_trans}s**")
 
 # ─────────────────────────────────────────────
-# INTERFAZ PRINCIPAL CON BANDERAS EN TODAS LAS PESTAÑAS
+# INTERFAZ PRINCIPAL
 # ─────────────────────────────────────────────
 if sel == "Value Bets":
     render_value_bets()
@@ -911,7 +881,7 @@ else:
     if d2 is not None:
         st.subheader("📈 Estadísticas por Jugador")
         for player, stats in d2.items():
-            # ✅ BANDERAS EN TODAS LAS PESTAÑAS
+            # BANDERAS + TENDENCIAS (umbral 10%)
             bandera = obtener_bandera(player)
             player_display = f"{bandera} {player}" if bandera else f"👤 {player}"
             
@@ -920,13 +890,29 @@ else:
                     for k, v in stats.items():
                         st.write(f"**{k}:** {v}")
                 else:
+                    # DIARIO - CON TENDENCIAS AL 10%
                     for etiqueta in orden_diario:
                         valor = "-"
+                        keywords = [kw for kw in etiqueta.lower().split() if len(kw) > 3]
+                        
                         for k, v in stats.items():
-                            if etiqueta.lower() in k.lower():
+                            if any(kw in k.lower() for kw in keywords):
                                 valor = v
                                 break
-                        st.write(f"**{etiqueta}:** {valor}")
+                        
+                        if valor != "-":
+                            # Calcular tendencia (10% umbral)
+                            valor_actual = extraer_ultimo_valor(stats, keywords)
+                            media = calcular_media_stats(stats, keywords)
+                            
+                            if valor_actual is not None and media is not None:
+                                tendencia = calcular_tendencia_stat(valor_actual, media, umbral=10.0)
+                                emoji = emoji_tendencia(tendencia)
+                                st.write(f"**{etiqueta}:** {valor} {emoji}")
+                            else:
+                                st.write(f"**{etiqueta}:** {valor}")
+                        else:
+                            st.write(f"**{etiqueta}:** -")
 
     if d1 is not None:
         st.subheader("⚔️ Detalles")
