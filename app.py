@@ -36,10 +36,9 @@ CORTES = {
 PESTANAS_CON_STATS = [k for k in URLS if k not in ("Value Bets",)]
 
 # ═══════════════════════════════════════════════════════════════
-# FASE 4: MAPEO DE JUGADORES A PAÍSES
+# MAPEO DE JUGADORES A PAÍSES
 # ═══════════════════════════════════════════════════════════════
 JUGADORES_PAISES = {
-    # Mapeo manual de jugadores conocidos (puedes ampliarlo)
     "luke littler": "GB",
     "michael van gerwen": "NL",
     "gary anderson": "GB",
@@ -84,14 +83,12 @@ JUGADORES_PAISES = {
     "william o'connor": "IE",
     "ciaran teeters": "IE",
     "benito van de pas": "NL",
-    "glenn de_bois": "GB",
+    "glenn de bois": "GB",
     "nick kenny": "GB",
     "nathan rafferty": "GB",
     "alexis toylo": "BE",
     "dylan slevin": "IE",
-    "jurjen van_der_velde": "NL",
-    "benito van_de_pas": "NL",
-    "glenn de bois": "GB",
+    "jurjen van der velde": "NL",
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -251,33 +248,21 @@ def cargar_jugadores_desde(pestana: str):
         return {}
 
 # ═══════════════════════════════════════════════════════════════
-# FASE 4: FUNCIONES DE BANDERAS Y H2H
+# FUNCIONES DE BANDERAS Y H2H
 # ═══════════════════════════════════════════════════════════════
 
 def obtener_bandera(nombre_jugador):
-    """
-    Obtiene la bandera del jugador usando el mapeo manual.
-    Devuelve la URL de la bandera o None.
-    """
-    nombre_lower = nombre_jugador.lower().strip()
-    
-    # Normalizar nombres con guiones bajos
-    nombre_normalizado = nombre_lower.replace("_", " ")
-    
-    # Buscar en el mapeo
-    codigo_pais = JUGADORES_PAISES.get(nombre_normalizado, None)
+    """Obtiene la bandera del jugador usando el mapeo manual."""
+    nombre_lower = nombre_jugador.lower().strip().replace("_", " ")
+    codigo_pais = JUGADORES_PAISES.get(nombre_lower, None)
     
     if codigo_pais:
-        # Usar la API de flagcdn.com para obtener banderas SVG
         return f"https://flagcdn.com/w40/{codigo_pais.lower()}.png"
     
     return None
 
 def calcular_tendencia(valor_actual, valor_anterior):
-    """
-    Calcula la tendencia comparando valor actual con anterior.
-    Retorna: '↑' (subiendo), '↓' (bajando), '→' (estable)
-    """
+    """Calcula la tendencia comparando valor actual con anterior."""
     if valor_anterior == 0:
         return '→'
     
@@ -294,7 +279,7 @@ def calcular_tendencia(valor_actual, valor_anterior):
 def extraer_h2h_semanal(j1_nombre, j2_nombre):
     """
     Extrae el historial H2H de todos los días de la semana.
-    Busca enfrentamientos directos en las tablas de partidos.
+    ESTRUCTURA: Cada partido son 2 filas consecutivas (J1 en par, J2 en impar).
     """
     h2h_data = {
         "victorias_j1": 0,
@@ -309,64 +294,68 @@ def extraer_h2h_semanal(j1_nombre, j2_nombre):
         "Final Sábado"
     ]
     
+    j1_lower = j1_nombre.lower().strip().replace("_", " ")
+    j2_lower = j2_nombre.lower().strip().replace("_", " ")
+    
     for dia in dias_semana:
         try:
             df_partidos, _ = cargar_todo(URLS[dia], dia, CORTES[dia])
             
-            if df_partidos is None:
+            if df_partidos is None or len(df_partidos) < 2:
                 continue
             
-            # Buscar enfrentamientos entre j1 y j2
-            for idx, row in df_partidos.iterrows():
-                jugador1 = str(row.iloc[0]).strip().lower() if len(row) > 0 else ""
-                jugador2 = str(row.iloc[1]).strip().lower() if len(row) > 1 else ""
+            # Leer cada 2 filas como un partido
+            for i in range(0, len(df_partidos) - 1, 2):
+                # Fila i = Jugador 1
+                # Fila i+1 = Jugador 2
+                fila_j1 = df_partidos.iloc[i]
+                fila_j2 = df_partidos.iloc[i + 1]
                 
-                j1_lower = j1_nombre.lower().strip()
-                j2_lower = j2_nombre.lower().strip()
+                # Extraer nombres (primera columna)
+                nombre_j1 = str(fila_j1.iloc[0]).strip().lower().replace("_", " ")
+                nombre_j2 = str(fila_j2.iloc[0]).strip().lower().replace("_", " ")
                 
-                # Verificar si es un enfrentamiento entre j1 y j2
+                # Verificar si es el enfrentamiento buscado
                 es_enfrentamiento = (
-                    (jugador1 in j1_lower or j1_lower in jugador1) and
-                    (jugador2 in j2_lower or j2_lower in jugador2)
+                    (j1_lower in nombre_j1 or nombre_j1 in j1_lower) and
+                    (j2_lower in nombre_j2 or nombre_j2 in j2_lower)
                 ) or (
-                    (jugador1 in j2_lower or j2_lower in jugador1) and
-                    (jugador2 in j1_lower or j1_lower in jugador2)
+                    (j2_lower in nombre_j1 or nombre_j1 in j2_lower) and
+                    (j1_lower in nombre_j2 or nombre_j2 in j1_lower)
                 )
                 
-                if es_enfrentamiento and len(row) > 2:
-                    # Extraer marcador
-                    marcador = str(row.iloc[2]).strip()
+                if es_enfrentamiento:
+                    # Extraer resultados (segunda columna típicamente)
+                    resultado_j1 = str(fila_j1.iloc[1]).strip() if len(fila_j1) > 1 else ""
+                    resultado_j2 = str(fila_j2.iloc[1]).strip() if len(fila_j2) > 1 else ""
                     
-                    # Determinar ganador
-                    if '-' in marcador:
-                        legs = marcador.split('-')
-                        if len(legs) == 2:
-                            legs_j1 = safe_float(legs[0])
-                            legs_j2 = safe_float(legs[1])
-                            
-                            if legs_j1 > legs_j2:
-                                ganador = jugador1
-                                if jugador1 in j1_lower or j1_lower in jugador1:
-                                    h2h_data["victorias_j1"] += 1
-                                else:
-                                    h2h_data["victorias_j2"] += 1
-                            elif legs_j2 > legs_j1:
-                                ganador = jugador2
-                                if jugador2 in j1_lower or j1_lower in jugador2:
-                                    h2h_data["victorias_j1"] += 1
-                                else:
-                                    h2h_data["victorias_j2"] += 1
-                            else:
-                                ganador = "Empate"
-                            
-                            h2h_data["partidos"].append({
-                                "dia": dia,
-                                "jugador1": jugador1.title(),
-                                "jugador2": jugador2.title(),
-                                "marcador": marcador,
-                                "ganador": ganador.title()
-                            })
-        except:
+                    # Determinar ganador: quien tiene "4" gana
+                    ganador = None
+                    marcador = f"{resultado_j1}-{resultado_j2}"
+                    
+                    if "4" in resultado_j1:
+                        ganador = nombre_j1.title()
+                        # Verificar si ganó j1 o j2
+                        if j1_lower in nombre_j1 or nombre_j1 in j1_lower:
+                            h2h_data["victorias_j1"] += 1
+                        else:
+                            h2h_data["victorias_j2"] += 1
+                    elif "4" in resultado_j2:
+                        ganador = nombre_j2.title()
+                        if j1_lower in nombre_j2 or nombre_j2 in j1_lower:
+                            h2h_data["victorias_j1"] += 1
+                        else:
+                            h2h_data["victorias_j2"] += 1
+                    
+                    if ganador:
+                        h2h_data["partidos"].append({
+                            "dia": dia,
+                            "jugador1": nombre_j1.title(),
+                            "jugador2": nombre_j2.title(),
+                            "marcador": marcador,
+                            "ganador": ganador
+                        })
+        except Exception as e:
             continue
     
     return h2h_data
@@ -494,14 +483,13 @@ def buscar_jugador(nombre, db):
     return None
 
 # ═══════════════════════════════════════════════════════════════
-# WIDGETS VISUALES CON BANDERAS
+# WIDGETS VISUALES
 # ═══════════════════════════════════════════════════════════════
 
 def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
     """Tarjeta visual SIMÉTRICA con stats del jugador Y BANDERA."""
     color = "#1f77b4" if is_left else "#ff7f0e"
     
-    # Obtener bandera
     bandera_url = obtener_bandera(nombre)
     bandera_html = f'<img src="{bandera_url}" style="width: 30px; height: 20px; margin-left: 10px; vertical-align: middle; border-radius: 3px;">' if bandera_url else ''
     
@@ -586,7 +574,6 @@ def render_value_bets():
     
     value_bets_list = []
     
-    # ── CONFIGURACIÓN ──
     with st.expander("⚙️ Configuración", expanded=True):
         fuente = st.selectbox(
             "📂 Fuente de datos",
@@ -609,7 +596,6 @@ def render_value_bets():
         tiempo_transcurrido = (datetime.now() - st.session_state.last_update[fuente]).seconds
         st.info(f"📊 {len(nombres_disponibles)} jugadores | ⏱️ Actualizado hace {tiempo_transcurrido}s")
 
-    # ── SELECCIÓN DE JUGADORES ──
     st.markdown("### 🥊 Seleccionar Enfrentamiento")
     
     if st.session_state.vb_j1 is None or st.session_state.vb_j1 not in nombres_disponibles:
@@ -661,7 +647,6 @@ def render_value_bets():
     lam1, lam2   = j1["lam_180"],  j2["lam_180"]
     legs1, legs2 = j1["lam_legs"], j2["lam_legs"]
 
-    # ── COMPARATIVA VISUAL SIMÉTRICA CON BANDERAS ──
     st.markdown("---")
     st.markdown("### 📊 Comparativa de Jugadores")
     
@@ -690,7 +675,7 @@ def render_value_bets():
     with col_j2:
         tarjeta_jugador(j2['nombre_original'], pr2, lam2, legs2, is_left=False)
 
-    # ── HEAD TO HEAD SEMANAL ──
+    # ── HEAD TO HEAD SEMANAL CORREGIDO ──
     st.markdown("---")
     st.markdown("### 🔥 Head to Head Semanal")
     
@@ -710,14 +695,12 @@ def render_value_bets():
         with col_h3:
             st.metric(f"Victorias {j2['nombre_original']}", h2h["victorias_j2"])
         
-        # Mostrar historial
         with st.expander("📋 Ver historial de enfrentamientos"):
             for partido in h2h["partidos"]:
                 st.markdown(f"**{partido['dia']}**: {partido['jugador1']} vs {partido['jugador2']} - **{partido['marcador']}** (Ganador: {partido['ganador']})")
     else:
         st.info("ℹ️ No se encontraron enfrentamientos directos esta semana")
 
-    # Calcular probabilidades
     v1, v2 = prob_victoria(pr1, pr2)
     m180 = prob_180s(lam1, lam2)
     p_j1_mas, p_emp, p_j2_mas = quien_hace_mas_180s(lam1, lam2)
@@ -738,7 +721,6 @@ def render_value_bets():
                 }
         return None
 
-    # ── MERCADOS ──
     st.markdown("---")
     st.markdown("### 🎲 Mercados Disponibles")
     
@@ -811,7 +793,6 @@ def render_value_bets():
         vb = procesar_mercado("Menos de 5.5 Legs", legs_total_dict["Menos de 5.5"], c2)
         if vb: value_bets_list.append(vb)
 
-    # ── RESUMEN VISUAL DE VALUE BETS ──
     if value_bets_list:
         st.markdown("---")
         st.markdown("### 💎 Resumen de Value Bets Encontradas")
@@ -878,7 +859,7 @@ if sel in st.session_state.last_update:
     st.sidebar.info(f"📅 **{sel}**\n\n⏱️ Actualizado hace **{tiempo_trans}s**")
 
 # ─────────────────────────────────────────────
-# INTERFAZ PRINCIPAL
+# INTERFAZ PRINCIPAL CON BANDERAS EN TODAS LAS PESTAÑAS
 # ─────────────────────────────────────────────
 if sel == "Value Bets":
     render_value_bets()
@@ -899,7 +880,15 @@ else:
     if d2 is not None:
         st.subheader("📈 Estadísticas por Jugador")
         for player, stats in d2.items():
-            with st.expander(f"👤 {player}"):
+            # ✅ BANDERAS EN TODAS LAS PESTAÑAS
+            bandera_url = obtener_bandera(player)
+            if bandera_url:
+                bandera_html = f'<img src="{bandera_url}" style="width: 20px; height: 14px; margin-right: 8px; vertical-align: middle; border-radius: 2px;">'
+                player_display = f"{bandera_html} {player}"
+            else:
+                player_display = f"👤 {player}"
+            
+            with st.expander(player_display, expanded=False):
                 if sel == "Resumen Semanal":
                     for k, v in stats.items():
                         st.write(f"**{k}:** {v}")
