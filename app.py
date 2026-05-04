@@ -315,7 +315,7 @@ def buscar_jugador(nombre, db):
     return None
 
 # ═══════════════════════════════════════════════════════════════
-# FASE 3: WIDGETS MEJORADOS Y COMPARATIVAS VISUALES
+# WIDGETS MEJORADOS - SIN INVENTAR CUOTAS
 # ═══════════════════════════════════════════════════════════════
 
 def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
@@ -348,13 +348,17 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
     """, unsafe_allow_html=True)
 
 def widget_mercado_compacto(mercado, prob, idx):
-    """Widget compacto para mercados con input de cuota."""
+    """
+    Widget compacto CORREGIDO:
+    - Input de cuota empieza vacío (value=None)
+    - Solo calcula yield si el usuario introduce manualmente una cuota
+    - Por defecto muestra yield 0.0%
+    """
     cuota_justa = prob_a_cuota(prob)
     
     col1, col2, col3, col4 = st.columns([3, 1.5, 1.5, 1.5])
     
     with col1:
-        # Barra de probabilidad visual
         porcentaje = int(prob * 100)
         st.markdown(f"**{mercado}**")
         st.progress(prob, text=f"{porcentaje}%")
@@ -364,32 +368,40 @@ def widget_mercado_compacto(mercado, prob, idx):
         st.caption("Cuota justa")
     
     with col3:
+        # CORRECCIÓN: value=None para que empiece vacío
         cuota_input = st.number_input(
-            "Cuota",
+            "Cuota bookie",
             min_value=1.01,
             max_value=50.0,
-            value=min(cuota_justa, 50.0),
+            value=None,  # ✅ Vacío por defecto
             step=0.05,
             key=f"cuota_{idx}",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            placeholder="Introduce cuota"
         )
         st.caption("Cuota bookie")
     
     with col4:
-        y = calcular_yield(prob, cuota_input)
-        color = "#28a745" if y > 0 else ("#dc3545" if y < -0.05 else "#6c757d")
-        st.markdown(f"<p style='font-size: 1.3em; font-weight: bold; color: {color}; margin: 0;'>{badge_yield(y)}</p>", unsafe_allow_html=True)
+        # CORRECCIÓN: Solo calcular yield si hay cuota introducida
+        if cuota_input is not None and cuota_input > 0:
+            y = calcular_yield(prob, cuota_input)
+            color = "#28a745" if y > 0 else ("#dc3545" if y < -0.05 else "#6c757d")
+            st.markdown(f"<p style='font-size: 1.3em; font-weight: bold; color: {color}; margin: 0;'>{badge_yield(y)}</p>", unsafe_allow_html=True)
+            
+            # Registrar value bet si existe
+            if y > 0:
+                st.session_state.value_bets_encontradas.append({
+                    "Mercado": mercado,
+                    "Probabilidad": prob,
+                    "Cuota Justa": cuota_justa,
+                    "Cuota Bookie": cuota_input,
+                    "Yield": y
+                })
+        else:
+            # Sin cuota introducida = yield 0%
+            st.markdown(f"<p style='font-size: 1.3em; font-weight: bold; color: #6c757d; margin: 0;'>➖ 0.0%</p>", unsafe_allow_html=True)
+        
         st.caption("Yield")
-    
-    # Registrar value bet si existe
-    if y > 0:
-        st.session_state.value_bets_encontradas.append({
-            "Mercado": mercado,
-            "Probabilidad": prob,
-            "Cuota Justa": cuota_justa,
-            "Cuota Bookie": cuota_input,
-            "Yield": y
-        })
 
 def render_value_bets():
     st.title("💰 Value Bets — Motor de Probabilidades")
@@ -566,8 +578,6 @@ def render_value_bets():
             }
         )
         st.success(f"✅ Se encontraron **{len(df_value)}** mercados con value positivo")
-    else:
-        st.info("ℹ️ No se encontraron value bets con las cuotas actuales")
 
 # ═══════════════════════════════════════════════════════════════
 # SIDEBAR
