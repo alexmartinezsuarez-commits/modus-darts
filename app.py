@@ -34,7 +34,7 @@ CORTES = {
 PESTANAS_CON_STATS = [k for k in URLS if k not in ("Value Bets",)]
 
 # ═══════════════════════════════════════════════════════════════
-# INICIALIZACIÓN DE SESSION STATE (evitar resets)
+# INICIALIZACIÓN DE SESSION STATE
 # ═══════════════════════════════════════════════════════════════
 if "vb_fuente" not in st.session_state:
     st.session_state.vb_fuente = "Resumen Semanal"
@@ -194,8 +194,19 @@ def handicaps_legs(v1, v2):
     }
 
 def legs_totales(lam_legs1, lam_legs2):
-    lam_media = (lam_legs1 + lam_legs2) / 2
-    return sanitize_prob(1 - poisson.cdf(5, lam_media))
+    """
+    CORRECCIÓN: Lambda total = SUMA de legs esperados
+    (cada leg lo gana uno u otro, por lo que se suman)
+    """
+    lam_total = lam_legs1 + lam_legs2  # SUMA, no media
+    
+    prob_mas_5_5 = sanitize_prob(1 - poisson.cdf(5, lam_total))
+    prob_menos_5_5 = sanitize_prob(poisson.cdf(5, lam_total))
+    
+    return {
+        "Más de 5.5": prob_mas_5_5,
+        "Menos de 5.5": prob_menos_5_5
+    }
 
 def prob_a_cuota(p):
     """
@@ -468,11 +479,12 @@ def render_value_bets():
         widget_cuota(etiq, hcaps[k], f"hcap_{idx}")
         idx += 1
 
-    # ── 5. LEGS TOTALES ──
+    # ── 5. LEGS TOTALES (CORREGIDO) ──
     st.markdown("---")
     st.markdown("#### 📊 Legs Totales")
-    p_legs = legs_totales(legs1, legs2)
-    widget_cuota("Más de 5.5 Legs", p_legs, "legs_total")
+    legs_total_dict = legs_totales(legs1, legs2)
+    widget_cuota("Más de 5.5 Legs", legs_total_dict["Más de 5.5"], "legs_mas")
+    widget_cuota("Menos de 5.5 Legs", legs_total_dict["Menos de 5.5"], "legs_menos")
 
 # ─────────────────────────────────────────────
 # INTERFAZ PRINCIPAL
