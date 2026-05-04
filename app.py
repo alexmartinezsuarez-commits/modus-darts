@@ -35,7 +35,7 @@ CORTES = {
 PESTANAS_CON_STATS = [k for k in URLS if k not in ("Value Bets",)]
 
 # ═══════════════════════════════════════════════════════════════
-# INICIALIZACIÓN DE SESSION STATE
+# SESSION STATE
 # ═══════════════════════════════════════════════════════════════
 if "vb_fuente" not in st.session_state:
     st.session_state.vb_fuente = "Resumen Semanal"
@@ -47,6 +47,8 @@ if "vb_calcular" not in st.session_state:
     st.session_state.vb_calcular = False
 if "last_update" not in st.session_state:
     st.session_state.last_update = {}
+if "value_bets_encontradas" not in st.session_state:
+    st.session_state.value_bets_encontradas = []
 
 # ─────────────────────────────────────────────
 # FUNCIONES AUXILIARES GENERALES
@@ -99,19 +101,10 @@ def extraer_stats_resumen(df):
             data_final[nombre_jugador] = stats
     return data_final
 
-# ═══════════════════════════════════════════════════════════════
-# FASE 2: CACHÉ OPTIMIZADA CON TTL BAJO (30 segundos)
-# ═══════════════════════════════════════════════════════════════
-@st.cache_data(ttl=30)  # ⚡ Reducido de 600s a 30s
+@st.cache_data(ttl=30)
 def cargar_todo(url, opcion, cortes):
-    """
-    Carga datos con caché de 30 segundos.
-    Registra timestamp de carga en session_state.
-    """
     try:
         df = pd.read_csv(url, header=None)
-        
-        # Registrar timestamp
         st.session_state.last_update[opcion] = datetime.now()
         
         if opcion == "Resumen Semanal":
@@ -135,16 +128,11 @@ def cargar_todo(url, opcion, cortes):
         st.error(f"Error cargando {opcion}: {e}")
         return None, None
 
-@st.cache_data(ttl=30)  # ⚡ 30 segundos también para Value Bets
+@st.cache_data(ttl=30)
 def cargar_jugadores_desde(pestana: str):
-    """
-    Carga jugadores con caché de 30 segundos.
-    """
     try:
         url = URLS[pestana]
         df = pd.read_csv(url, header=None)
-        
-        # Registrar timestamp
         st.session_state.last_update[pestana] = datetime.now()
 
         fila_header = None
@@ -279,7 +267,6 @@ def legs_totales(lam_legs1, lam_legs2):
         p = lam_legs1 / (lam_legs1 + lam_legs2)
     
     q = 1 - p
-    
     prob_4_0_j1 = p ** 4
     prob_4_1_j1 = 4 * (p ** 4) * q
     prob_4_0_j2 = q ** 4
@@ -306,11 +293,11 @@ def calcular_yield(prob, cuota_bookie):
 
 def badge_yield(y):
     if y > 0:
-        return f"✅ +{y*100:.1f}% VALUE"
+        return f"✅ +{y*100:.1f}%"
     elif y < -0.05:
-        return f"❌ {y*100:.1f}% sin valor"
+        return f"❌ {y*100:.1f}%"
     else:
-        return f"➖ {y*100:.1f}% neutro"
+        return f"➖ {y*100:.1f}%"
 
 def _buscar_stat(stats_dict, keywords):
     for k, v in stats_dict.items():
@@ -327,44 +314,98 @@ def buscar_jugador(nombre, db):
             return v
     return None
 
-# ─────────────────────────────────────────────
-# WIDGET DE CUOTA BOOKIE
-# ─────────────────────────────────────────────
-def widget_cuota(mercado, prob, idx):
+# ═══════════════════════════════════════════════════════════════
+# FASE 3: WIDGETS MEJORADOS Y COMPARATIVAS VISUALES
+# ═══════════════════════════════════════════════════════════════
+
+def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
+    """Tarjeta visual con stats del jugador."""
+    color = "#1f77b4" if is_left else "#ff7f0e"
+    
+    st.markdown(f"""
+    <div style="
+        border: 2px solid {color};
+        border-radius: 10px;
+        padding: 20px;
+        background: linear-gradient(135deg, {color}15 0%, {color}05 100%);
+    ">
+        <h3 style="color: {color}; margin: 0 0 15px 0;">🎯 {nombre}</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+                <p style="margin: 5px 0; font-size: 0.9em; color: #666;">Power Ranking</p>
+                <p style="margin: 0; font-size: 1.8em; font-weight: bold; color: {color};">{pr:.1f}</p>
+            </div>
+            <div>
+                <p style="margin: 5px 0; font-size: 0.9em; color: #666;">λ 180s</p>
+                <p style="margin: 0; font-size: 1.8em; font-weight: bold; color: {color};">{lam_180:.2f}</p>
+            </div>
+            <div>
+                <p style="margin: 5px 0; font-size: 0.9em; color: #666;">λ Legs</p>
+                <p style="margin: 0; font-size: 1.8em; font-weight: bold; color: {color};">{lam_legs:.2f}</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def widget_mercado_compacto(mercado, prob, idx):
+    """Widget compacto para mercados con input de cuota."""
     cuota_justa = prob_a_cuota(prob)
     
-    col_a, col_b, col_c = st.columns([3, 2, 2])
-    with col_a:
-        st.write(f"**{mercado}**")
-        st.caption(f"Prob: {pct(prob)}  |  Cuota justa: {cuota_justa:.2f}")
-    with col_b:
+    col1, col2, col3, col4 = st.columns([3, 1.5, 1.5, 1.5])
+    
+    with col1:
+        # Barra de probabilidad visual
+        porcentaje = int(prob * 100)
+        st.markdown(f"**{mercado}**")
+        st.progress(prob, text=f"{porcentaje}%")
+    
+    with col2:
+        st.metric("Cuota justa", f"{cuota_justa:.2f}", label_visibility="collapsed")
+        st.caption("Cuota justa")
+    
+    with col3:
         cuota_input = st.number_input(
-            "Cuota bookie",
+            "Cuota",
             min_value=1.01,
             max_value=50.0,
             value=min(cuota_justa, 50.0),
             step=0.05,
-            key=f"cuota_{idx}"
+            key=f"cuota_{idx}",
+            label_visibility="collapsed"
         )
-    with col_c:
+        st.caption("Cuota bookie")
+    
+    with col4:
         y = calcular_yield(prob, cuota_input)
-        st.markdown(f"<br><span style='font-size:1.1em'>{badge_yield(y)}</span>", unsafe_allow_html=True)
+        color = "#28a745" if y > 0 else ("#dc3545" if y < -0.05 else "#6c757d")
+        st.markdown(f"<p style='font-size: 1.3em; font-weight: bold; color: {color}; margin: 0;'>{badge_yield(y)}</p>", unsafe_allow_html=True)
+        st.caption("Yield")
+    
+    # Registrar value bet si existe
+    if y > 0:
+        st.session_state.value_bets_encontradas.append({
+            "Mercado": mercado,
+            "Probabilidad": prob,
+            "Cuota Justa": cuota_justa,
+            "Cuota Bookie": cuota_input,
+            "Yield": y
+        })
 
-# ─────────────────────────────────────────────
-# RENDER VALUE BETS
-# ─────────────────────────────────────────────
 def render_value_bets():
     st.title("💰 Value Bets — Motor de Probabilidades")
     
-    st.markdown("### ⚙️ Configuración")
-    fuente_idx = PESTANAS_CON_STATS.index(st.session_state.vb_fuente)
-    fuente = st.selectbox(
-        "📂 Usar estadísticas de:",
-        PESTANAS_CON_STATS,
-        index=fuente_idx,
-        key="selector_fuente"
-    )
-    st.session_state.vb_fuente = fuente
+    # Reset value bets al inicio
+    st.session_state.value_bets_encontradas = []
+    
+    # ── CONFIGURACIÓN ──
+    with st.expander("⚙️ Configuración", expanded=True):
+        fuente = st.selectbox(
+            "📂 Fuente de datos",
+            PESTANAS_CON_STATS,
+            index=PESTANAS_CON_STATS.index(st.session_state.vb_fuente),
+            key="selector_fuente"
+        )
+        st.session_state.vb_fuente = fuente
 
     with st.spinner(f"Cargando datos de '{fuente}'..."):
         db_jugadores = cargar_jugadores_desde(fuente)
@@ -375,13 +416,11 @@ def render_value_bets():
 
     nombres_disponibles = sorted([v["nombre_original"] for v in db_jugadores.values()])
     
-    # Mostrar timestamp de última actualización
     if fuente in st.session_state.last_update:
         tiempo_transcurrido = (datetime.now() - st.session_state.last_update[fuente]).seconds
-        st.success(f"✅ {len(nombres_disponibles)} jugadores cargados | ⏱️ Actualizado hace {tiempo_transcurrido}s")
-    else:
-        st.success(f"✅ {len(nombres_disponibles)} jugadores cargados")
+        st.info(f"📊 {len(nombres_disponibles)} jugadores | ⏱️ Actualizado hace {tiempo_transcurrido}s")
 
+    # ── SELECCIÓN DE JUGADORES ──
     st.markdown("### 🥊 Seleccionar Enfrentamiento")
     
     if st.session_state.vb_j1 is None or st.session_state.vb_j1 not in nombres_disponibles:
@@ -414,7 +453,8 @@ def render_value_bets():
         st.session_state.vb_j2 = j2_sel
     
     with col3:
-        if st.button("🔢 Calcular", type="primary"):
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔢 Calcular Probabilidades", type="primary", use_container_width=True):
             st.session_state.vb_calcular = True
 
     if not st.session_state.vb_calcular:
@@ -432,84 +472,118 @@ def render_value_bets():
     lam1, lam2   = j1["lam_180"],  j2["lam_180"]
     legs1, legs2 = j1["lam_legs"], j2["lam_legs"]
 
+    # ── COMPARATIVA VISUAL ──
     st.markdown("---")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"**{j1['nombre_original']}**")
-        st.caption(f"PR: {pr1:.1f} | λ 180s: {lam1:.2f} | λ Legs: {legs1:.2f}")
-    with c2:
-        st.markdown(f"**{j2['nombre_original']}**")
-        st.caption(f"PR: {pr2:.1f} | λ 180s: {lam2:.2f} | λ Legs: {legs2:.2f}")
+    st.markdown("### 📊 Comparativa de Jugadores")
+    col_j1, col_vs, col_j2 = st.columns([5, 1, 5])
+    
+    with col_j1:
+        tarjeta_jugador(j1['nombre_original'], pr1, lam1, legs1, is_left=True)
+    
+    with col_vs:
+        st.markdown("<br><br><h1 style='text-align: center; color: #666;'>VS</h1>", unsafe_allow_html=True)
+    
+    with col_j2:
+        tarjeta_jugador(j2['nombre_original'], pr2, lam2, legs2, is_left=False)
 
+    # Calcular todas las probabilidades
     v1, v2 = prob_victoria(pr1, pr2)
-
-    st.markdown("---")
-    st.markdown("#### 🏆 Victoria")
-    widget_cuota(f"Gana {j1['nombre_original']}", v1, "vic_j1")
-    widget_cuota(f"Gana {j2['nombre_original']}", v2, "vic_j2")
-
-    st.markdown("---")
-    st.markdown("#### 🎯 180s")
     m180 = prob_180s(lam1, lam2)
-    idx = 0
-    for mercado_key, prob in [
-        (f"{j1['nombre_original']} +0.5", m180["J1 +0.5"]),
-        (f"{j1['nombre_original']} +1.5", m180["J1 +1.5"]),
-        (f"{j2['nombre_original']} +0.5", m180["J2 +0.5"]),
-        (f"{j2['nombre_original']} +1.5", m180["J2 +1.5"]),
-        ("Ambos +1.5", m180["Ambos +1.5"]),
-        ("Ambos +2.5", m180["Ambos +2.5"]),
-    ]:
-        widget_cuota(mercado_key, prob, f"180_{idx}")
-        idx += 1
-
-    st.markdown("---")
-    st.markdown("#### 🥇 ¿Quién hace más 180s?")
     p_j1_mas, p_emp, p_j2_mas = quien_hace_mas_180s(lam1, lam2)
-    widget_cuota(f"Más: {j1['nombre_original']}", p_j1_mas, "mas_j1")
-    widget_cuota("Empate", p_emp, "mas_emp")
-    widget_cuota(f"Más: {j2['nombre_original']}", p_j2_mas, "mas_j2")
-
-    st.markdown("---")
-    st.markdown("#### 📐 Hándicaps de Legs")
     hcaps = handicaps_legs(v1, v2)
-    idx = 0
-    for k, etiq in [
-        ("J1 -1.5 Legs", f"{j1['nombre_original']} -1.5"),
-        ("J1 -2.5 Legs", f"{j1['nombre_original']} -2.5"),
-        ("J1 +1.5 Legs", f"{j1['nombre_original']} +1.5"),
-        ("J1 +2.5 Legs", f"{j1['nombre_original']} +2.5"),
-        ("J2 -1.5 Legs", f"{j2['nombre_original']} -1.5"),
-        ("J2 -2.5 Legs", f"{j2['nombre_original']} -2.5"),
-        ("J2 +1.5 Legs", f"{j2['nombre_original']} +1.5"),
-        ("J2 +2.5 Legs", f"{j2['nombre_original']} +2.5"),
-    ]:
-        widget_cuota(etiq, hcaps[k], f"hcap_{idx}")
-        idx += 1
-
-    st.markdown("---")
-    st.markdown("#### 📊 Legs Totales (First to 4)")
-    st.caption("Basado en distribución binomial negativa — Under 5.5 = marcadores 4-0 y 4-1")
     legs_total_dict = legs_totales(legs1, legs2)
-    widget_cuota("Más de 5.5 Legs", legs_total_dict["Más de 5.5"], "legs_mas")
-    widget_cuota("Menos de 5.5 Legs", legs_total_dict["Menos de 5.5"], "legs_menos")
+
+    # ── MERCADOS ORGANIZADOS POR TABS ──
+    st.markdown("---")
+    st.markdown("### 🎲 Mercados Disponibles")
+    
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏆 Victoria", "🎯 180s", "🥇 ¿Quién hace más?", "📐 Hándicaps", "📊 Totales"])
+    
+    with tab1:
+        st.markdown("#### 🏆 Mercado de Victoria")
+        widget_mercado_compacto(f"Gana {j1['nombre_original']}", v1, "vic_j1")
+        widget_mercado_compacto(f"Gana {j2['nombre_original']}", v2, "vic_j2")
+    
+    with tab2:
+        st.markdown("#### 🎯 Mercado de 180s (Poisson)")
+        mercados_180 = [
+            (f"{j1['nombre_original']} +0.5", m180["J1 +0.5"]),
+            (f"{j1['nombre_original']} +1.5", m180["J1 +1.5"]),
+            (f"{j2['nombre_original']} +0.5", m180["J2 +0.5"]),
+            (f"{j2['nombre_original']} +1.5", m180["J2 +1.5"]),
+            ("Ambos +1.5", m180["Ambos +1.5"]),
+            ("Ambos +2.5", m180["Ambos +2.5"]),
+        ]
+        for idx, (mercado, prob) in enumerate(mercados_180):
+            widget_mercado_compacto(mercado, prob, f"180_{idx}")
+    
+    with tab3:
+        st.markdown("#### 🥇 ¿Quién hace más 180s?")
+        widget_mercado_compacto(f"Más: {j1['nombre_original']}", p_j1_mas, "mas_j1")
+        widget_mercado_compacto("Empate en 180s", p_emp, "mas_emp")
+        widget_mercado_compacto(f"Más: {j2['nombre_original']}", p_j2_mas, "mas_j2")
+    
+    with tab4:
+        st.markdown("#### 📐 Hándicaps de Legs")
+        handicaps_lista = [
+            (f"{j1['nombre_original']} -1.5", hcaps["J1 -1.5 Legs"]),
+            (f"{j1['nombre_original']} -2.5", hcaps["J1 -2.5 Legs"]),
+            (f"{j1['nombre_original']} +1.5", hcaps["J1 +1.5 Legs"]),
+            (f"{j1['nombre_original']} +2.5", hcaps["J1 +2.5 Legs"]),
+            (f"{j2['nombre_original']} -1.5", hcaps["J2 -1.5 Legs"]),
+            (f"{j2['nombre_original']} -2.5", hcaps["J2 -2.5 Legs"]),
+            (f"{j2['nombre_original']} +1.5", hcaps["J2 +1.5 Legs"]),
+            (f"{j2['nombre_original']} +2.5", hcaps["J2 +2.5 Legs"]),
+        ]
+        for idx, (mercado, prob) in enumerate(handicaps_lista):
+            widget_mercado_compacto(mercado, prob, f"hcap_{idx}")
+    
+    with tab5:
+        st.markdown("#### 📊 Legs Totales (First to 4)")
+        st.caption("Basado en distribución binomial negativa — Under 5.5 = marcadores 4-0 y 4-1")
+        widget_mercado_compacto("Más de 5.5 Legs", legs_total_dict["Más de 5.5"], "legs_mas")
+        widget_mercado_compacto("Menos de 5.5 Legs", legs_total_dict["Menos de 5.5"], "legs_menos")
+
+    # ── RESUMEN DE VALUE BETS ──
+    if st.session_state.value_bets_encontradas:
+        st.markdown("---")
+        st.markdown("### 💎 Resumen de Value Bets Encontradas")
+        
+        df_value = pd.DataFrame(st.session_state.value_bets_encontradas)
+        df_value = df_value.sort_values("Yield", ascending=False)
+        df_value["Probabilidad"] = df_value["Probabilidad"].apply(lambda x: f"{x*100:.1f}%")
+        df_value["Cuota Justa"] = df_value["Cuota Justa"].apply(lambda x: f"{x:.2f}")
+        df_value["Cuota Bookie"] = df_value["Cuota Bookie"].apply(lambda x: f"{x:.2f}")
+        df_value["Yield"] = df_value["Yield"].apply(lambda x: f"+{x*100:.1f}%")
+        
+        st.dataframe(
+            df_value,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Mercado": st.column_config.TextColumn("Mercado", width="medium"),
+                "Yield": st.column_config.TextColumn("Yield 💰", width="small")
+            }
+        )
+        st.success(f"✅ Se encontraron **{len(df_value)}** mercados con value positivo")
+    else:
+        st.info("ℹ️ No se encontraron value bets con las cuotas actuales")
 
 # ═══════════════════════════════════════════════════════════════
-# SIDEBAR CON BOTÓN DE REFRESH
+# SIDEBAR
 # ═══════════════════════════════════════════════════════════════
 st.sidebar.title("🎯 Menú Modus")
 sel = st.sidebar.radio("Ir a:", list(URLS.keys()), key="menu_principal")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🔄 Actualización de Datos")
-st.sidebar.caption("Caché automática: 30 segundos")
+st.sidebar.markdown("### 🔄 Actualización")
+st.sidebar.caption("Caché: 30 segundos")
 
-if st.sidebar.button("♻️ Forzar Refresh", help="Invalida toda la caché y recarga los datos inmediatamente"):
+if st.sidebar.button("♻️ Forzar Refresh", help="Recarga inmediata"):
     st.cache_data.clear()
     st.session_state.last_update = {}
     st.rerun()
 
-# Mostrar timestamp de última actualización en sidebar
 if sel in st.session_state.last_update:
     ultima_act = st.session_state.last_update[sel]
     tiempo_trans = (datetime.now() - ultima_act).seconds
@@ -524,7 +598,6 @@ else:
     d1, d2 = cargar_todo(URLS[sel], sel, CORTES[sel])
     st.title(f"📊 {sel}")
 
-    # Mostrar timestamp de actualización
     if sel in st.session_state.last_update:
         tiempo = (datetime.now() - st.session_state.last_update[sel]).seconds
         st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
