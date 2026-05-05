@@ -429,10 +429,8 @@ def similitud_nombres(nombre1, nombre2, umbral=0.6):
 @st.cache_data(ttl=300, show_spinner=False)
 def obtener_cuotas_winamax(j1_nombre, j2_nombre):
     """
-    Obtiene cuotas de Winamax usando Playwright (sync API).
-    Sin playwright_stealth, usando user_agent y headers manuales.
-    
-    Retorna dict con estructura de cuotas o error.
+    Obtiene cuotas de Winamax (requiere playwright instalado).
+    Si no está disponible, retorna estructura vacía con mensaje.
     """
     
     try:
@@ -440,7 +438,7 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
         from bs4 import BeautifulSoup
     except ImportError:
         return {
-            "error": "⚠️ Instala: pip install playwright beautifulsoup4",
+            "error": "⚠️ Playwright no instalado. La función de Winamax está deshabilitada.",
             "victoria": {}, "180s": {}, "mas_180s": {}, 
             "handi_j1": {}, "handi_j2": {}, "total_legs": {}
         }
@@ -572,7 +570,6 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
                 }
                 
                 # Buscar elementos de cuota dentro del partido
-                # Ajustar selectores según estructura real de Winamax
                 cuota_elementos = partido_encontrado.find_all(
                     ["span", "button", "div"], 
                     attrs={"class": lambda x: x and any(k in str(x).lower() for k in ["odd", "cuota", "cota", "bet"])},
@@ -586,14 +583,12 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
                         limit=100
                     )
                 
-                # Extraer cuotas (estructura simplificada)
+                # Extraer cuotas
                 for elemento in cuota_elementos:
                     texto = elemento.get_text().strip()
                     try:
                         cuota = float(texto.replace(",", "."))
-                        if 1.01 <= cuota <= 100:  # Rango válido de cuota
-                            # Aquí iría lógica para identificar el mercado
-                            # Por ahora dejar estructura lista
+                        if 1.01 <= cuota <= 100:
                             pass
                     except ValueError:
                         pass
@@ -744,11 +739,15 @@ def prob_victoria(pr1, pr2):
 
 def prob_180s(lam1, lam2):
     lam_total = lam1 + lam2
+    # Ambos +0.5 = ambos hacen al menos 1 180
+    ambos_05 = sanitize_prob((1 - poisson.cdf(0, lam1)) * (1 - poisson.cdf(0, lam2)))
+    
     return {
         "J1 +0.5": sanitize_prob(1 - poisson.cdf(0, lam1)),
         "J1 +1.5": sanitize_prob(1 - poisson.cdf(1, lam1)),
         "J2 +0.5": sanitize_prob(1 - poisson.cdf(0, lam2)),
         "J2 +1.5": sanitize_prob(1 - poisson.cdf(1, lam2)),
+        "Ambos +0.5": ambos_05,
         "Ambos +1.5": sanitize_prob(1 - poisson.cdf(1, lam_total)),
         "Ambos +2.5": sanitize_prob(1 - poisson.cdf(2, lam_total)),
     }
