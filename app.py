@@ -523,73 +523,34 @@ def buscar_jugador(nombre, db):
 # ═══════════════════════════════════════════════════════════════
 
 def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, stats_extras=None):
-    """Tarjeta visual SIMÉTRICA con stats del jugador, BANDERA y MÉTRICAS adicionales."""
+    """Tarjeta visual del jugador con stats."""
     color = "#1f77b4" if is_left else "#ff7f0e"
     
     bandera = obtener_bandera(nombre)
     nombre_display = f"{bandera} {nombre}" if bandera else f"🎯 {nombre}"
     
-    # Extraer stats adicionales si existen
-    dardos_prom = 0
+    # Extraer stats adicionales
     checkouts_prom = 0
     pct_victorias = 0
     
     if stats_extras:
-        # Buscar datos en stats_extras
         for k, v in stats_extras.items():
-            if "dardo" in k.lower():
-                dardos_prom = safe_float(v)
-            elif "checkout" in k.lower() and "%" in str(v):
+            if "checkout" in k.lower() and "%" in str(v):
                 checkouts_prom = safe_float(str(v).replace("%", ""))
             elif "porcentaje victoria" in k.lower() or "% victoria" in k.lower():
                 pct_victorias = safe_float(str(v).replace("%", ""))
     
-    st.markdown(f"""
-    <div style="
-        border: 2px solid {color};
-        border-radius: 12px;
-        padding: 24px;
-        background: linear-gradient(135deg, {color}15 0%, {color}05 100%);
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.07);
-    ">
-        <h3 style="color: {color}; margin: 0 0 24px 0; text-align: center; font-size: 1.3em;">
-            {nombre_display}
-        </h3>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-            <div style="text-align: center; padding: 12px; background: white; border-radius: 8px;">
-                <p style="margin: 0 0 6px 0; font-size: 0.75em; color: #999; font-weight: 600; text-transform: uppercase;">Power Ranking</p>
-                <p style="margin: 0; font-size: 1.8em; font-weight: bold; color: {color};">{pr:.1f}</p>
-            </div>
-            <div style="text-align: center; padding: 12px; background: white; border-radius: 8px;">
-                <p style="margin: 0 0 6px 0; font-size: 0.75em; color: #999; font-weight: 600; text-transform: uppercase;">λ 180s</p>
-                <p style="margin: 0; font-size: 1.8em; font-weight: bold; color: {color};">{lam_180:.2f}</p>
-            </div>
-        </div>
-        
-        <div style="text-align: center; padding: 12px; background: white; border-radius: 8px; margin-bottom: 20px;">
-            <p style="margin: 0 0 6px 0; font-size: 0.75em; color: #999; font-weight: 600; text-transform: uppercase;">λ Legs (Media)</p>
-            <p style="margin: 0; font-size: 1.8em; font-weight: bold; color: {color};">{lam_legs:.2f}</p>
-        </div>
-        
-        <div style="border-top: 1px solid {color}30; padding-top: 16px; flex: 1;">
-            <p style="margin: 0 0 12px 0; font-size: 0.75em; color: #999; font-weight: 600; text-transform: uppercase;">Métricas Adicionales</p>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div style="text-align: center; padding: 8px; background: rgba({255 if not is_left else 31}, {127 if not is_left else 119}, {14 if not is_left else 180}, 0.08); border-radius: 6px;">
-                    <p style="margin: 0 0 4px 0; font-size: 0.7em; color: #666;">Checkouts</p>
-                    <p style="margin: 0; font-size: 1.2em; font-weight: bold; color: {color};">{checkouts_prom:.1f}%</p>
-                </div>
-                <div style="text-align: center; padding: 8px; background: rgba({255 if not is_left else 31}, {127 if not is_left else 119}, {14 if not is_left else 180}, 0.08); border-radius: 6px;">
-                    <p style="margin: 0 0 4px 0; font-size: 0.7em; color: #666;">% Victorias</p>
-                    <p style="margin: 0; font-size: 1.2em; font-weight: bold; color: {color};">{pct_victorias:.0f}%</p>
-                </div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.metric("Power Ranking", f"{pr:.1f}")
+        st.metric("λ 180s", f"{lam_180:.2f}")
+    
+    with col2:
+        st.metric("λ Legs", f"{lam_legs:.2f}")
+        st.metric("Checkouts %", f"{checkouts_prom:.1f}%")
+    
+    st.metric("% Victorias", f"{pct_victorias:.0f}%")
 
 def render_barras_enfrentadas(j1_nombre, j1_prob, j2_nombre, j2_prob, j1_color="#1f77b4", j2_color="#ff7f0e"):
     """Renderiza dos barras horizontales enfrentadas (tipo comparación)."""
@@ -698,35 +659,46 @@ def render_bloques_jugador(j_nombre, mercados_lista, color="#1f77b4"):
 
 def render_mas_180s_barras(j1_nombre, p_j1_mas, j2_nombre, p_j2_mas, p_empate, j1_color="#1f77b4", j2_color="#ff7f0e"):
     """Renderiza barras para 'quién hace más 180s' con empate en el centro."""
-    st.markdown(f"""
+    # Calcular porcentajes
+    total = p_j1_mas + p_emp + p_j2_mas
+    if total == 0:
+        p_j1_mas = p_emp = p_j2_mas = 1/3
+    
+    pct_j1 = (p_j1_mas / total * 100)
+    pct_emp = (p_emp / total * 100)
+    pct_j2 = (p_j2_mas / total * 100)
+    
+    html_str = f"""
     <div style="margin: 30px 0;">
-        <div style="display: flex; align-items: flex-end; gap: 20px; height: 120px;">
-            <!-- J1 -->
-            <div style="flex: 0 0 35%; display: flex; flex-direction: column; align-items: center;">
-                <div style="width: 100%; height: {max(20, p_j1_mas*200)}px; background: linear-gradient(180deg, {j1_color}, {j1_color}dd); border-radius: 8px 8px 0 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px;">
-                    <span style="color: white; font-weight: bold; font-size: 1.1em;">{p_j1_mas*100:.1f}%</span>
-                </div>
-                <p style="margin: 12px 0 0 0; font-weight: bold; color: {j1_color}; text-align: center; font-size: 1em;">{j1_nombre}</p>
+        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+            <div style="flex: 0 0 20%; text-align: right;">
+                <p style="margin: 0; font-weight: bold; font-size: 1em; color: {j1_color};">{j1_nombre}</p>
+                <p style="margin: 5px 0 0 0; font-size: 1.2em; font-weight: bold; color: {j1_color};">{pct_j1:.1f}%</p>
             </div>
-            
-            <!-- EMPATE -->
-            <div style="flex: 0 0 30%; display: flex; flex-direction: column; align-items: center;">
-                <div style="width: 100%; height: {max(20, p_empate*200)}px; background: linear-gradient(180deg, #999, #777); border-radius: 8px 8px 0 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px;">
-                    <span style="color: white; font-weight: bold; font-size: 1.1em;">{p_empate*100:.1f}%</span>
+            <div style="flex: 1;">
+                <div style="display: flex; height: 50px; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="width: {pct_j1}%; background: linear-gradient(90deg, {j1_color}, {j1_color}dd); display: flex; align-items: center; justify-content: flex-end; padding-right: 8px;">
+                        <span style="color: white; font-weight: bold; font-size: 0.85em;">{p_j1_mas*100:.1f}%</span>
+                    </div>
+                    <div style="width: {pct_emp}%; background: linear-gradient(90deg, #999, #777); display: flex; align-items: center; justify-content: center;">
+                        <span style="color: white; font-weight: bold; font-size: 0.85em;">{p_emp*100:.1f}%</span>
+                    </div>
+                    <div style="width: {pct_j2}%; background: linear-gradient(90deg, {j2_color}dd, {j2_color}); display: flex; align-items: center; justify-content: flex-start; padding-left: 8px;">
+                        <span style="color: white; font-weight: bold; font-size: 0.85em;">{p_j2_mas*100:.1f}%</span>
+                    </div>
                 </div>
-                <p style="margin: 12px 0 0 0; font-weight: bold; color: #666; text-align: center; font-size: 1em;">Empate</p>
             </div>
-            
-            <!-- J2 -->
-            <div style="flex: 0 0 35%; display: flex; flex-direction: column; align-items: center;">
-                <div style="width: 100%; height: {max(20, p_j2_mas*200)}px; background: linear-gradient(180deg, {j2_color}, {j2_color}dd); border-radius: 8px 8px 0 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px;">
-                    <span style="color: white; font-weight: bold; font-size: 1.1em;">{p_j2_mas*100:.1f}%</span>
-                </div>
-                <p style="margin: 12px 0 0 0; font-weight: bold; color: {j2_color}; text-align: center; font-size: 1em;">{j2_nombre}</p>
+            <div style="flex: 0 0 20%; text-align: left;">
+                <p style="margin: 0; font-weight: bold; font-size: 1em; color: {j2_color};">{j2_nombre}</p>
+                <p style="margin: 5px 0 0 0; font-size: 1.2em; font-weight: bold; color: {j2_color};">{pct_j2:.1f}%</p>
             </div>
         </div>
+        <div style="text-align: center; margin-top: 10px;">
+            <p style="margin: 0; font-size: 0.85em; color: #666; font-weight: 600;">Empate: {p_emp*100:.1f}%</p>
+        </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(html_str, unsafe_allow_html=True)
 
 def widget_mercado_compacto(mercado, prob, idx):
     """Widget compacto que DEVUELVE la cuota introducida."""
@@ -940,14 +912,17 @@ def render_value_bets():
         with col_v1:
             st.markdown(f"**🎯 Gana {j1['nombre_original']}**")
             cuota_justa = prob_a_cuota(v1)
+            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
             c1 = st.number_input(
-                f"Cuota para {j1['nombre_original']}",
+                f"Tu cuota",
                 min_value=1.01, max_value=50.0, value=None, step=0.05,
                 key="vic_j1", label_visibility="collapsed", placeholder="Introduce cuota"
             )
+            st.caption(f"{v1*100:.1f}% probabilidad")
             if c1 and c1 > 0:
                 y = calcular_yield(v1, c1)
-                st.metric("Yield", f"{'+' if y > 0 else ''}{y*100:.1f}%", delta_color="off")
+                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
                 vb = {"Mercado": f"Gana {j1['nombre_original']}", "Probabilidad": v1, "Cuota Justa": cuota_justa, "Cuota Bookie": c1, "Yield": y}
                 if y > 0:
                     value_bets_list.append(vb)
@@ -955,14 +930,17 @@ def render_value_bets():
         with col_v2:
             st.markdown(f"**🎯 Gana {j2['nombre_original']}**")
             cuota_justa = prob_a_cuota(v2)
+            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
             c2 = st.number_input(
-                f"Cuota para {j2['nombre_original']}",
+                f"Tu cuota",
                 min_value=1.01, max_value=50.0, value=None, step=0.05,
                 key="vic_j2", label_visibility="collapsed", placeholder="Introduce cuota"
             )
+            st.caption(f"{v2*100:.1f}% probabilidad")
             if c2 and c2 > 0:
                 y = calcular_yield(v2, c2)
-                st.metric("Yield", f"{'+' if y > 0 else ''}{y*100:.1f}%", delta_color="off")
+                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
                 vb = {"Mercado": f"Gana {j2['nombre_original']}", "Probabilidad": v2, "Cuota Justa": prob_a_cuota(v2), "Cuota Bookie": c2, "Yield": y}
                 if y > 0:
                     value_bets_list.append(vb)
@@ -978,22 +956,26 @@ def render_value_bets():
         with col_a:
             st.markdown("**+0.5 180s** (Al menos 1 180)")
             cuota_justa = prob_a_cuota(m180["J1 +0.5"])
-            c = st.number_input(f"Cuota {j1['nombre_original']} +0.5", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_j1_05", label_visibility="collapsed", placeholder="Introduce cuota")
-            st.metric("Probabilidad", f"{m180['J1 +0.5']*100:.1f}%")
+            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            c = st.number_input(f"Tu cuota", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_j1_05", label_visibility="collapsed", placeholder="Introduce cuota")
+            st.caption(f"{m180['J1 +0.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J1 +0.5"], c)
-                st.metric("Yield", f"{'+' if y > 0 else ''}{y*100:.1f}%", delta_color="off")
+                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
                 if y > 0:
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +0.5 180s", "Probabilidad": m180["J1 +0.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         with col_b:
             st.markdown("**+1.5 180s** (Al menos 2 180s)")
             cuota_justa = prob_a_cuota(m180["J1 +1.5"])
-            c = st.number_input(f"Cuota {j1['nombre_original']} +1.5", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_j1_15", label_visibility="collapsed", placeholder="Introduce cuota")
-            st.metric("Probabilidad", f"{m180['J1 +1.5']*100:.1f}%")
+            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            c = st.number_input(f"Tu cuota", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_j1_15", label_visibility="collapsed", placeholder="Introduce cuota")
+            st.caption(f"{m180['J1 +1.5']*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(m180["J1 +1.5"], c)
-                st.metric("Yield", f"{'+' if y > 0 else ''}{y*100:.1f}%", delta_color="off")
+                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
                 if y > 0:
                     value_bets_list.append({"Mercado": f"{j1['nombre_original']} +1.5 180s", "Probabilidad": m180["J1 +1.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
@@ -1068,32 +1050,41 @@ def render_value_bets():
         col_m1, col_m2, col_m3 = st.columns(3)
         
         with col_m1:
-            st.markdown(f"**Más: {j1['nombre_original']}**")
+            st.markdown(f"**{j1['nombre_original']}**")
             cuota_justa = prob_a_cuota(p_j1_mas)
-            c = st.number_input(f"Cuota más {j1['nombre_original']}", min_value=1.01, max_value=50.0, value=None, step=0.05, key="mas_j1", label_visibility="collapsed", placeholder="Introduce cuota")
+            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            c = st.number_input(f"Tu cuota {j1['nombre_original']}", min_value=1.01, max_value=50.0, value=None, step=0.05, key="mas_j1", label_visibility="collapsed", placeholder="Introduce cuota")
+            st.caption(f"{p_j1_mas*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(p_j1_mas, c)
-                st.metric("Yield", f"{'+' if y > 0 else ''}{y*100:.1f}%", delta_color="off")
+                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
                 if y > 0:
                     value_bets_list.append({"Mercado": f"Más 180s: {j1['nombre_original']}", "Probabilidad": p_j1_mas, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         with col_m2:
-            st.markdown("**Empate 180s**")
+            st.markdown("**Empate**")
             cuota_justa = prob_a_cuota(p_emp)
-            c = st.number_input(f"Cuota empate", min_value=1.01, max_value=50.0, value=None, step=0.05, key="mas_emp", label_visibility="collapsed", placeholder="Introduce cuota")
+            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            c = st.number_input(f"Tu cuota empate", min_value=1.01, max_value=50.0, value=None, step=0.05, key="mas_emp", label_visibility="collapsed", placeholder="Introduce cuota")
+            st.caption(f"{p_emp*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(p_emp, c)
-                st.metric("Yield", f"{'+' if y > 0 else ''}{y*100:.1f}%", delta_color="off")
+                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
                 if y > 0:
                     value_bets_list.append({"Mercado": "Empate 180s", "Probabilidad": p_emp, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
         with col_m3:
-            st.markdown(f"**Más: {j2['nombre_original']}**")
+            st.markdown(f"**{j2['nombre_original']}**")
             cuota_justa = prob_a_cuota(p_j2_mas)
-            c = st.number_input(f"Cuota más {j2['nombre_original']}", min_value=1.01, max_value=50.0, value=None, step=0.05, key="mas_j2", label_visibility="collapsed", placeholder="Introduce cuota")
+            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            c = st.number_input(f"Tu cuota {j2['nombre_original']}", min_value=1.01, max_value=50.0, value=None, step=0.05, key="mas_j2", label_visibility="collapsed", placeholder="Introduce cuota")
+            st.caption(f"{p_j2_mas*100:.1f}% probabilidad")
             if c and c > 0:
                 y = calcular_yield(p_j2_mas, c)
-                st.metric("Yield", f"{'+' if y > 0 else ''}{y*100:.1f}%", delta_color="off")
+                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
                 if y > 0:
                     value_bets_list.append({"Mercado": f"Más 180s: {j2['nombre_original']}", "Probabilidad": p_j2_mas, "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
     
