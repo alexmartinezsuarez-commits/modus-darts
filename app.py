@@ -268,7 +268,7 @@ def cargar_jugadores_desde(pestana: str):
         col_180     = buscar_col(["180"])
         col_legs    = buscar_col(["legs", "leg"])
         col_checkouts = buscar_col(["checkout"])
-        col_pct_vic = buscar_col(["porcentaje victoria", "% victoria", "porcentaje"])
+        col_pct_vic = buscar_col(["porcentaje victoria", "% victoria", "% victoria", "%victoria"])
 
         jugadores = {}
         for _, fila in data.iterrows():
@@ -640,16 +640,20 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, jugador_data=No
     # Renderizar pentágono
     render_pentagon_habilidades(nombre, pr, lam_180, lam_legs, checkouts_prom, pct_victorias, color)
     
-    # Mostrar valores numéricos en pequeño
+    # Mostrar valores numéricos grandes y visibles
+    st.markdown("---")
     col1, col2, col3 = st.columns(3)
+    
     with col1:
-        st.caption(f"**PR:** {pr:.1f}")
-        st.caption(f"**180s:** {lam_180:.2f}")
+        st.metric("Power Ranking", f"{pr:.1f}")
+        st.metric("λ 180s", f"{lam_180:.2f}")
+    
     with col2:
-        st.caption(f"**Legs:** {lam_legs:.2f}")
-        st.caption(f"**Chk:** {checkouts_prom:.0f}%")
+        st.metric("λ Legs", f"{lam_legs:.2f}")
+        st.metric("Checkouts", f"{checkouts_prom:.0f}%")
+    
     with col3:
-        st.caption(f"**Vic:** {pct_victorias:.0f}%")
+        st.metric("% Victorias", f"{pct_victorias:.0f}%")
 
 def render_barras_enfrentadas(j1_nombre, j1_prob, j2_nombre, j2_prob, j1_color="#1f77b4", j2_color="#ff7f0e"):
     """Renderiza dos barras horizontales enfrentadas (tipo comparación)."""
