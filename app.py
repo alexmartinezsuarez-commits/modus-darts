@@ -1,3 +1,29 @@
+import subprocess
+import sys
+import os
+
+# ⚡ INSTALAR PLAYWRIGHT AUTOMÁTICAMENTE
+try:
+    import playwright
+except ImportError:
+    print("📥 Instalando Playwright...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "playwright"])
+    print("✅ Playwright instalado")
+
+# Descargar Chromium si no existe
+playwright_dir = os.path.expanduser("~/.cache/ms-playwright")
+if not os.path.exists(playwright_dir):
+    print("📥 Descargando Chromium (primera vez, puede tardar ~1 min)...")
+    try:
+        subprocess.check_call(["playwright", "install", "chromium"], 
+                            stdout=subprocess.DEVNULL, 
+                            stderr=subprocess.DEVNULL)
+        print("✅ Chromium descargado")
+    except:
+        pass
+
+# ─────────────────────────────────────────────────────────────
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -336,10 +362,10 @@ def get_jornada_actual():
             nombre, url = jornadas_grupo_c[dia_semana]
             return nombre, url, True
     
-    # GRUPO B + FINAL (Noche): 22:00-03:00 (cruza medianoche)
+    # GRUPO B + FINAL (Noche): 20:00-03:00 (cruza medianoche)
     # Jueves noche (22:00-03:00) → Grupo B Jueves
     # Viernes noche (22:00-03:00) → Grupo B Viernes
-    # Sábado noche (22:00-03:00) → Final Sábado
+    # Sábado noche (20:00-03:00) → Final Sábado
     
     if hora_actual >= 22.0:  # Entre 22:00 y 23:59
         # Estamos en la noche, la jornada pertenece a hoy
@@ -347,8 +373,10 @@ def get_jornada_actual():
             return "Grupo B Jueves", URLS["Grupo B Jueves"], True
         elif dia_semana == 4:  # Viernes noche
             return "Grupo B Viernes", URLS["Grupo B Viernes"], True
-        elif dia_semana == 5:  # Sábado noche
-            return "Final Sábado", URLS["Final Sábado"], True
+    
+    # Sábado desde las 20:00
+    if dia_semana == 5 and hora_actual >= 20.0:  # Sábado 20:00+
+        return "Final Sábado", URLS["Final Sábado"], True
     
     elif hora_actual < 3.0:  # Entre 00:00 y 02:59 (cruza medianoche)
         # Estamos en la madrugada, la jornada pertenece a ayer
@@ -377,7 +405,7 @@ def get_proxima_jornada():
         ("Grupo B Jueves", URLS["Grupo B Jueves"], 3, 22.0),
         ("Grupo C Viernes", URLS["Grupo C Viernes"], 4, 13.0),
         ("Grupo B Viernes", URLS["Grupo B Viernes"], 4, 22.0),
-        ("Final Sábado", URLS["Final Sábado"], 5, 22.0),
+        ("Final Sábado", URLS["Final Sábado"], 5, 20.0),
     ]
     
     ahora = datetime.now()
