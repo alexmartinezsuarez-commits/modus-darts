@@ -1828,49 +1828,7 @@ if st.sidebar.button("▶️ Ejecutar Actualización", type="primary", use_conta
     except Exception as e:
         st.sidebar.error(f"❌ Error: {str(e)}")
 
-# ─────────────────────────────────────────────
-# INFORMACIÓN DEL SCRIPT
-# ─────────────────────────────────────────────
 
-with st.sidebar.expander("ℹ️ Información del Script", expanded=False):
-    st.markdown("""
-    ### 📊 Función: `actualizarDatosCompletos()`
-    
-    **¿Qué hace?**
-    - ✅ Obtiene datos de la API
-    - ✅ Actualiza estadísticas de jugadores
-    - ✅ Limpia datos viejos
-    - ✅ Rellena hojas de Excel
-    
-    **Ejecución Automática:**
-    - ⏰ Cada 10 minutos
-    - 📅 Lunes-Sábado en horarios de juego
-    - 🗑️ Domingos ≥ 5 AM (limpieza completa)
-    
-    **Horarios:**
-    - Grupo A: Lun-Mié 10:00-16:00
-    - Grupo C: Jue-Vie 13:00-19:00
-    - Grupo B + Final: 22:00-03:00
-    
-    **Este botón:** Ejecuta el script de inmediato
-    """)
-
-# ─────────────────────────────────────────────
-# ESTADO DEL SCRIPT
-# ─────────────────────────────────────────────
-
-with st.sidebar.expander("📈 Estado", expanded=False):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Automático", "✅ Activo")
-    
-    with col2:
-        st.metric("Intervalo", "10 minutos")
-    
-    st.divider()
-    st.markdown("**Estado:** Script en ejecución automática")
-    st.markdown("**Última ejecución:** Ver en Google Apps Script → Logs")
 
 # ─────────────────────────────────────────────
 # MAIN - NAVEGACIÓN
