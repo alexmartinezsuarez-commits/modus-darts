@@ -29,7 +29,7 @@ import pandas as pd
 import numpy as np
 import requests
 from scipy.stats import poisson
-from datetime import datetime
+from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 import time
 
@@ -201,15 +201,13 @@ def extraer_stats_diarias(df, fila_n, col_rango):
         for i, j in enumerate(jugadores):
             stats = {}
             curr_f = fila_n + 1
-            while curr_f + 1 < len(df) and curr_f < fila_n + 35:  # Aumentado de 30 a 35 para Final Sábado
+            while curr_f + 1 < len(df) and curr_f < fila_n + 35:
                 tit = str(df.iloc[curr_f, col_rango[0]]).strip()
                 
-                # Intentar obtener valor en fila N+1 o N+2 (para Final Sábado)
                 if tit != 'nan' and tit != '':
                     val_fila1 = str(df.iloc[curr_f + 1, col_rango[0] + i]).strip() if curr_f + 1 < len(df) else 'nan'
                     val_fila2 = str(df.iloc[curr_f + 2, col_rango[0] + i]).strip() if curr_f + 2 < len(df) else 'nan'
                     
-                    # Usar valor de fila N+1 si existe, sino N+2 (para Final Sábado)
                     val = val_fila1 if val_fila1 != 'nan' else val_fila2
                     if val != 'nan' and val != '':
                         stats[tit] = val
@@ -222,16 +220,13 @@ def extraer_stats_diarias(df, fila_n, col_rango):
 def extraer_stats_resumen_semanal(df):
     """Extrae stats de Resumen Semanal con estructura especial (columnas separadas por =)"""
     try:
-        # Fila 6 (índice 5) contiene los encabezados
         headers = [str(v).strip() for v in df.iloc[5].values if str(v).strip() not in ['', 'nan']]
         
-        # Filas 7+ contienen datos (índice 6+)
         data = df.iloc[6:].copy()
         
         jugadores = {}
         
         for idx, row in data.iterrows():
-            # Nombre está en columna B (índice 1)
             nombre = str(row.iloc[1]).strip() if len(row) > 1 else ""
             
             if nombre in ['nan', '', '=']:
@@ -239,21 +234,18 @@ def extraer_stats_resumen_semanal(df):
                 
             stats = {}
             
-            # Procesar columnas saltando los separadores "="
-            col_idx = 2  # Comenzar después del nombre
-            header_idx = 1  # Índice en headers (después de Jugador)
+            col_idx = 2
+            header_idx = 1
             
             while col_idx < len(row) and header_idx < len(headers):
                 valor = row.iloc[col_idx]
                 header = headers[header_idx]
                 
-                # Saltar columnas "="
                 if header.strip() == '=':
                     col_idx += 1
                     header_idx += 1
                     continue
                 
-                # Procesar dato
                 if str(valor).strip() not in ['nan', '', '=']:
                     stats[header.lower().strip()] = valor
                 
@@ -261,7 +253,6 @@ def extraer_stats_resumen_semanal(df):
                 header_idx += 1
             
             if stats:
-                # No incluir "nombre_original" en stats
                 jugadores[nombre.lower()] = stats
         
         return jugadores
@@ -350,35 +341,30 @@ def cargar_jugadores_desde(pestana: str):
         st.error(f"Error cargando {pestana}: {e}")
         return {}
 
-@st.cache_data(ttl=5)  # 30 segundos
+@st.cache_data(ttl=5)
 def cargar_todo(url, opcion, cortes):
     try:
         df = pd.read_csv(url, header=None)
         st.session_state.last_update[opcion] = datetime.now()
         
         if opcion == "Resumen Semanal":
-            # Usar función específica para Resumen Semanal
             stats = extraer_stats_resumen_semanal(df)
             
-            # Crear DataFrame para mostrar con orden personalizado
             df_list = []
             for nombre_lower, stat_dict in stats.items():
                 fila = {"Jugador": nombre_lower}
                 
-                # Orden específico: otros datos primero, Puntuación Global último
                 orden_columnas = [
                     "legs por partido", "media 180 por partida", "promedio puntos",
                     "diferencia legs", "promedio checkouts", "número victorias",
                     "número derrotas", "porcentaje victoria"
                 ]
                 
-                # Agregar en orden
                 for col in orden_columnas:
                     for k, v in stat_dict.items():
                         if col in k.lower():
                             fila[k] = v
                 
-                # Agregar Puntuación Global al final (lo último)
                 for k, v in stat_dict.items():
                     if "puntuación" in k.lower() or "puntacion" in k.lower():
                         fila[k] = v
@@ -404,13 +390,12 @@ def cargar_todo(url, opcion, cortes):
         st.error(f"Error cargando {opcion}: {e}")
         return None, None
 
-@st.cache_data(ttl=10)  # Cache de 10 segundos para LIVE (más actualizado)
+@st.cache_data(ttl=10)
 def obtener_partidos_vivos_api():
     """Obtiene partidos en vivo directamente desde la API de MODUS"""
     try:
         base_url = "https://api-igamedc.igamemedia.com/api/mss-web"
         
-        # Obtener fixtures activos
         response = requests.get(f"{base_url}/results-fixtures", timeout=5)
         if response.status_code != 200:
             return None
@@ -432,13 +417,11 @@ def obtener_partidos_vivos_api():
                     fixtures = resp.json().get("Fixtures", resp.json().get("fixtures", []))
                     
                     for fixture in fixtures:
-                        # Solo partidos que han comenzado
                         if fixture.get("status", "").lower() != "not started":
                             fixture_id = fixture.get("gameId") or fixture.get("Id") or fixture.get("id")
                             
                             if fixture_id:
                                 try:
-                                    # Obtener detalles del partido
                                     detail_resp = requests.get(f"{base_url}/fixtures/{fixture_id}", timeout=5)
                                     if detail_resp.status_code == 200:
                                         detail = detail_resp.json()
@@ -469,80 +452,6 @@ def obtener_partidos_vivos_api():
     except Exception as e:
         st.warning(f"⚠️ Error obteniendo datos de MODUS: {e}")
         return None
-    try:
-        url = URLS[pestana]
-        df = pd.read_csv(url, header=None)
-        st.session_state.last_update[pestana] = datetime.now()
-
-        fila_header = None
-        for i, row in df.iterrows():
-            if any(str(v).strip().lower() == "jugador" for v in row.values):
-                fila_header = i
-                break
-
-        if fila_header is None:
-            corte = CORTES.get(pestana, {})
-            if "der_nombres" in corte:
-                der_f  = corte["der_nombres"]
-                der_c  = corte["der_cols"]
-                stats  = extraer_stats_diarias(df, der_f, der_c)
-                jugadores = {}
-                for nombre, s in stats.items():
-                    pr       = safe_float(_buscar_stat(s, ["global", "puntuación", "puntuacion"]))
-                    lam_180  = safe_float(_buscar_stat(s, ["180", "ciento"]))
-                    lam_legs = safe_float(_buscar_stat(s, ["legs por partido", "promedio legs", "leg por partido"]))
-                    promedio_dardos = safe_float(_buscar_stat(s, ["promedio puntos", "average", "promedio dardos", "ppd", "media puntos"]))
-                    checkouts = safe_float(str(_buscar_stat(s, ["checkout"])).replace("%", ""))
-                    pct_vic = safe_float(str(_buscar_stat(s, ["porcentaje victoria", "% victoria"])).replace("%", ""))
-                    jugadores[nombre.lower()] = {
-                        "nombre_original": nombre,
-                        "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs,
-                        "promedio_dardos": promedio_dardos,
-                        "checkouts": checkouts, "pct_victorias": pct_vic
-                    }
-                return jugadores
-            return {}
-
-        headers = [str(v).strip() for v in df.iloc[fila_header].values]
-        data    = df.iloc[fila_header + 1:].copy()
-        data.columns = headers
-        data = data.reset_index(drop=True)
-
-        def buscar_col(keywords):
-            for h in headers:
-                if any(kw.lower() in h.lower() for kw in keywords):
-                    return h
-            return None
-
-        col_jugador = buscar_col(["jugador", "nombre"])
-        col_pr      = buscar_col(["puntuación global", "puntuacion global", "global", "power"])
-        col_180     = buscar_col(["180"])
-        col_legs    = buscar_col(["legs", "leg"])
-        col_promedio_dardos = buscar_col(["promedio puntos", "average", "promedio dardos", "ppd", "media puntos"])
-        col_checkouts = buscar_col(["checkout"])
-        col_pct_vic = buscar_col(["porcentaje victoria", "% victoria", "% victoria", "%victoria"])
-
-        jugadores = {}
-        for _, fila in data.iterrows():
-            nombre = str(fila.get(col_jugador, "")).strip() if col_jugador else ""
-            if not nombre or nombre.lower() in ["nan", "jugador", ""]:
-                continue
-            pr       = safe_float(fila.get(col_pr,    0)) if col_pr    else 0.0
-            lam_180  = safe_float(fila.get(col_180,   0)) if col_180   else 0.0
-            lam_legs = safe_float(fila.get(col_legs,  0)) if col_legs  else 0.0
-            promedio_dardos = safe_float(fila.get(col_promedio_dardos, 0)) if col_promedio_dardos else 0.0
-            checkouts = safe_float(str(fila.get(col_checkouts, 0)).replace("%", "")) if col_checkouts else 0.0
-            pct_vic = safe_float(str(fila.get(col_pct_vic, 0)).replace("%", "")) if col_pct_vic else 0.0
-            jugadores[nombre.lower()] = {
-                "nombre_original": nombre,
-                "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs,
-                "promedio_dardos": promedio_dardos,
-                "checkouts": checkouts, "pct_victorias": pct_vic
-            }
-        return jugadores
-    except Exception as e:
-        st.error(f"Error cargando {pestana}: {e}")
-        return {}
 
 # ═══════════════════════════════════════════════════════════════
 # FUNCIONES DE BANDERAS Y H2H
@@ -555,16 +464,11 @@ def get_jornada_actual():
     
     Retorna: (nombre_jornada, url, es_activa) o (None, None, False)
     """
-    from datetime import datetime, timedelta
-    
     ahora = datetime.now()
     hora_actual = ahora.hour + ahora.minute / 60
-    dia_semana = ahora.weekday()  # 0=lunes, 6=domingo
+    dia_semana = ahora.weekday()
     
-    # Mapeo de días: 0=lunes, 1=martes, 2=miércoles, 3=jueves, 4=viernes, 5=sábado, 6=domingo
-    
-    # GRUPO A (Mañana): Lunes, Martes, Miércoles 10:00-16:00
-    if dia_semana in [0, 1, 2]:  # Lunes, Martes, Miércoles
+    if dia_semana in [0, 1, 2]:
         if 10.0 <= hora_actual < 16.0:
             jornadas_grupo_a = {
                 0: ("Grupo A Lunes", URLS["Grupo A Lunes"]),
@@ -574,8 +478,7 @@ def get_jornada_actual():
             nombre, url = jornadas_grupo_a[dia_semana]
             return nombre, url, True
     
-    # GRUPO C (Tarde): Jueves, Viernes 13:00-19:00
-    if dia_semana in [3, 4]:  # Jueves, Viernes
+    if dia_semana in [3, 4]:
         if 13.0 <= hora_actual < 19.0:
             jornadas_grupo_c = {
                 3: ("Grupo C Jueves", URLS["Grupo C Jueves"]),
@@ -584,40 +487,30 @@ def get_jornada_actual():
             nombre, url = jornadas_grupo_c[dia_semana]
             return nombre, url, True
     
-    # GRUPO B + FINAL (Noche): 20:00-03:00 (cruza medianoche)
-    # Jueves noche (22:00-03:00) → Grupo B Jueves
-    # Viernes noche (22:00-03:00) → Grupo B Viernes
-    # Sábado noche (20:00-03:00) → Final Sábado
-    
-    if hora_actual >= 22.0:  # Entre 22:00 y 23:59
-        # Estamos en la noche, la jornada pertenece a hoy
-        if dia_semana == 3:  # Jueves noche
+    if hora_actual >= 22.0:
+        if dia_semana == 3:
             return "Grupo B Jueves", URLS["Grupo B Jueves"], True
-        elif dia_semana == 4:  # Viernes noche
+        elif dia_semana == 4:
             return "Grupo B Viernes", URLS["Grupo B Viernes"], True
     
-    # Sábado desde las 20:00
-    if dia_semana == 5 and hora_actual >= 20.0:  # Sábado 20:00+
+    if dia_semana == 5 and hora_actual >= 20.0:
         return "Final Sábado", URLS["Final Sábado"], True
     
-    elif hora_actual < 3.0:  # Entre 00:00 y 02:59 (cruza medianoche)
-        # Estamos en la madrugada, la jornada pertenece a ayer
+    elif hora_actual < 3.0:
         ayer = ahora - timedelta(days=1)
         dia_ayer = ayer.weekday()
         
-        if dia_ayer == 3:  # Ayer fue jueves → Grupo B Jueves
+        if dia_ayer == 3:
             return "Grupo B Jueves", URLS["Grupo B Jueves"], True
-        elif dia_ayer == 4:  # Ayer fue viernes → Grupo B Viernes
+        elif dia_ayer == 4:
             return "Grupo B Viernes", URLS["Grupo B Viernes"], True
-        elif dia_ayer == 5:  # Ayer fue sábado → Final Sábado
+        elif dia_ayer == 5:
             return "Final Sábado", URLS["Final Sábado"], True
     
-    # No hay jornada activa
     return None, None, False
 
 def get_proxima_jornada():
     """Retorna la próxima jornada después de la actual."""
-    from datetime import datetime, timedelta
     
     jornadas_orden = [
         ("Grupo A Lunes", URLS["Grupo A Lunes"], 0, 10.0),
@@ -638,7 +531,6 @@ def get_proxima_jornada():
         if dia > dia_semana or (dia == dia_semana and hora_inicio > hora_actual):
             return nombre, url
     
-    # Si no hay más jornadas esta semana, devolver la primera de la próxima
     return jornadas_orden[0][0], jornadas_orden[0][1]
 
 def obtener_bandera(nombre_jugador):
@@ -659,28 +551,24 @@ def similitud_nombres(nombre1, nombre2, umbral=0.6):
     nombre1_lower = nombre1.lower().strip()
     nombre2_lower = nombre2.lower().strip()
     
-    # Elimintar espacios y puntos para comparación más flexible
     nombre1_clean = nombre1_lower.replace(" ", "").replace(".", "")
     nombre2_clean = nombre2_lower.replace(" ", "").replace(".", "")
     
     similitud = SequenceMatcher(None, nombre1_clean, nombre2_clean).ratio()
     
-    # También probar comparando iniciales y apellidos
     if " " in nombre1_lower and " " in nombre2_lower:
         partes1 = nombre1_lower.split()
         partes2 = nombre2_lower.split()
         
-        # Si la primera letra coincide y el apellido es similar
         if partes1[0][0] == partes2[0][0] and SequenceMatcher(None, partes1[-1], partes2[-1]).ratio() > 0.8:
             return True
     
     return similitud >= umbral
 
-@st.cache_data(ttl=30, show_spinner=False)  # 30 segundos
+@st.cache_data(ttl=30, show_spinner=False)
 def obtener_cuotas_winamax(j1_nombre, j2_nombre):
     """
     Obtiene cuotas de Winamax (requiere playwright instalado).
-    Si no está disponible, retorna estructura vacía con mensaje.
     """
     
     try:
@@ -695,7 +583,6 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
     
     try:
         with sync_playwright() as p:
-            # Lanzar navegador con user_agent realista
             browser = p.chromium.launch(
                 headless=True,
                 args=["--disable-blink-features=AutomationControlled"]
@@ -715,7 +602,6 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
             
             page = context.new_page()
             
-            # Evitar detección de bot
             page.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => false,
@@ -723,16 +609,13 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
             """)
             
             try:
-                # Navegar a Winamax
                 page.goto("https://www.winamax.es/apuestas", timeout=30000, wait_until="domcontentloaded")
-                time.sleep(2)  # Esperar carga
+                time.sleep(2)
                 
-                # Buscar y hacer clic en Dardos
                 try:
                     page.click("text=Dardos", timeout=10000)
                     time.sleep(2)
                 except:
-                    # Intentar alternativas
                     try:
                         page.click('a:has-text("Dardos")')
                         time.sleep(2)
@@ -743,7 +626,6 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
                             "handi_j1": {}, "handi_j2": {}, "total_legs": {}
                         }
                 
-                # Buscar MODUS Super Series
                 try:
                     page.click("text=MODUS", timeout=10000)
                     time.sleep(2)
@@ -758,24 +640,19 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
                             "handi_j1": {}, "handi_j2": {}, "total_legs": {}
                         }
                 
-                # Esperar a que carguen los partidos
                 page.wait_for_selector("[class*='match'], [data-testid*='match'], .game-row, [class*='event']", timeout=15000)
                 time.sleep(2)
                 
-                # Obtener HTML
                 html = page.content()
                 
-                # Parsear con BeautifulSoup
                 soup = BeautifulSoup(html, "html.parser")
                 
-                # Buscar partido con fuzzy matching
                 partidos = soup.find_all("div", recursive=True, limit=50)
                 
                 partido_encontrado = None
                 for partido in partidos:
                     texto = partido.get_text()
                     
-                    # Verificar si contiene ambos nombres con fuzzy matching
                     has_j1 = similitud_nombres(j1_nombre, texto, umbral=0.5)
                     has_j2 = similitud_nombres(j2_nombre, texto, umbral=0.5)
                     
@@ -790,7 +667,6 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
                         "handi_j1": {}, "handi_j2": {}, "total_legs": {}
                     }
                 
-                # Estructura base de cuotas
                 cuotas = {
                     "victoria": {"j1": None, "j2": None},
                     "180s": {
@@ -818,30 +694,6 @@ def obtener_cuotas_winamax(j1_nombre, j2_nombre):
                     "total_legs": {"over": None, "under": None},
                     "error": None
                 }
-                
-                # Buscar elementos de cuota dentro del partido
-                cuota_elementos = partido_encontrado.find_all(
-                    ["span", "button", "div"], 
-                    attrs={"class": lambda x: x and any(k in str(x).lower() for k in ["odd", "cuota", "cota", "bet"])},
-                    limit=50
-                )
-                
-                # Si no encuentra por clase, buscar por contenido numérico
-                if not cuota_elementos:
-                    cuota_elementos = partido_encontrado.find_all(
-                        ["span", "button", "div"],
-                        limit=100
-                    )
-                
-                # Extraer cuotas
-                for elemento in cuota_elementos:
-                    texto = elemento.get_text().strip()
-                    try:
-                        cuota = float(texto.replace(",", "."))
-                        if 1.01 <= cuota <= 100:
-                            pass
-                    except ValueError:
-                        pass
                 
                 browser.close()
                 
@@ -876,11 +728,10 @@ def calcular_tendencia(valor_actual, valor_anterior):
     else:
         return '→'
 
-@st.cache_data(ttl=5)  # 30 segundos
+@st.cache_data(ttl=5)
 def extraer_h2h_semanal(j1_nombre, j2_nombre):
     """
     Extrae el historial H2H de todos los días de la semana.
-    ESTRUCTURA: Cada partido son 2 filas consecutivas (J1 en par, J2 en impar).
     """
     h2h_data = {
         "victorias_j1": 0,
@@ -905,16 +756,13 @@ def extraer_h2h_semanal(j1_nombre, j2_nombre):
             if df_partidos is None or len(df_partidos) < 2:
                 continue
             
-            # Leer cada 2 filas como un partido
             for i in range(0, len(df_partidos) - 1, 2):
                 fila_j1 = df_partidos.iloc[i]
                 fila_j2 = df_partidos.iloc[i + 1]
                 
-                # Extraer nombres (primera columna)
                 nombre_j1 = str(fila_j1.iloc[0]).strip().lower().replace("_", " ")
                 nombre_j2 = str(fila_j2.iloc[0]).strip().lower().replace("_", " ")
                 
-                # Verificar si es el enfrentamiento buscado
                 es_enfrentamiento = (
                     (j1_lower in nombre_j1 or nombre_j1 in j1_lower) and
                     (j2_lower in nombre_j2 or nombre_j2 in j2_lower)
@@ -924,11 +772,9 @@ def extraer_h2h_semanal(j1_nombre, j2_nombre):
                 )
                 
                 if es_enfrentamiento:
-                    # Extraer resultados (segunda columna típicamente)
                     resultado_j1 = str(fila_j1.iloc[1]).strip() if len(fila_j1) > 1 else ""
                     resultado_j2 = str(fila_j2.iloc[1]).strip() if len(fila_j2) > 1 else ""
                     
-                    # Determinar ganador: quien tiene "4" gana
                     ganador = None
                     marcador = f"{resultado_j1}-{resultado_j2}"
                     
@@ -989,7 +835,6 @@ def prob_victoria(pr1, pr2):
 
 def prob_180s(lam1, lam2):
     lam_total = lam1 + lam2
-    # Ambos +0.5 = ambos hacen al menos 1 180
     ambos_05 = sanitize_prob((1 - poisson.cdf(0, lam1)) * (1 - poisson.cdf(0, lam2)))
     
     return {
@@ -1032,8 +877,7 @@ def handicaps_legs(v1, v2):
 
 def legs_totales(lam_legs1, lam_legs2):
     """
-    Calcula probabilidades de total de legs usando MEDIA DE LEGS (lam_legs).
-    ✅ CORREGIDO: Usa media de legs en lugar de diferencia de legs.
+    Calcula probabilidades de total de legs usando MEDIA DE LEGS.
     """
     if lam_legs1 + lam_legs2 == 0:
         p = 0.5
@@ -1093,33 +937,29 @@ def buscar_jugador(nombre, db):
 # ═══════════════════════════════════════════════════════════════
 
 def render_pentagon_habilidades(nombre, pr, lam_180, promedio_dardos, checkouts, pct_vic, color="#1f77b4"):
-    """Renderiza un pentágono de habilidades (radar chart) para un jugador con SVG.
-    Ejes: Power Ranking, λ 180s, Promedio Dardos, Checkouts, Victorias"""
+    """Renderiza un pentágono de habilidades (radar chart) para un jugador con SVG."""
     
-    # Normalizar datos a escala 0-100
     pr_norm = min(100, max(0, pr))
     lam_180_norm = min(100, max(0, (lam_180 / 3.0) * 100))
-    promedio_dardos_norm = min(100, max(0, (promedio_dardos / 100) * 100))  # Normalizar a escala 0-100 PPD
+    promedio_dardos_norm = min(100, max(0, (promedio_dardos / 100) * 100))
     checkouts_norm = min(100, max(0, checkouts))
     pct_vic_norm = min(100, max(0, pct_vic))
     
     values = [pr_norm, lam_180_norm, promedio_dardos_norm, checkouts_norm, pct_vic_norm]
     labels = ["Power\nRanking", "λ 180s", "Promedio\nDardos", "Checkouts", "Victorias"]
     
-    # Calcular puntos del pentágono
     center_x, center_y = 200, 200
     radius = 150
-    angle_offset = -90  # Comenzar desde arriba
+    angle_offset = -90
     
     points = []
     for i in range(5):
-        angle = angle_offset + (i * 72)  # 360/5 = 72 grados
+        angle = angle_offset + (i * 72)
         rad = np.radians(angle)
         x = center_x + radius * np.cos(rad)
         y = center_y + radius * np.sin(rad)
         points.append((x, y))
     
-    # Calcular puntos de datos (escala 0-100)
     data_points = []
     for i in range(5):
         angle = angle_offset + (i * 72)
@@ -1129,53 +969,42 @@ def render_pentagon_habilidades(nombre, pr, lam_180, promedio_dardos, checkouts,
         y = center_y + data_radius * np.sin(rad)
         data_points.append((x, y))
     
-    # Crear SVG
     svg_parts = []
     
-    # Encabezado SVG
     svg_parts.append('<svg width="400" height="450" xmlns="http://www.w3.org/2000/svg">')
     
-    # Fondo
     svg_parts.append('<rect width="400" height="450" fill="white"/>')
     
-    # Líneas de referencia (círculos concéntricos)
     for r_pct in [20, 40, 60, 80, 100]:
         r = (r_pct / 100) * radius
         svg_parts.append(f'<circle cx="{center_x}" cy="{center_y}" r="{r}" fill="none" stroke="rgba(200,200,200,0.3)" stroke-width="1"/>')
     
-    # Líneas desde centro a vértices
     for point in points:
         svg_parts.append(f'<line x1="{center_x}" y1="{center_y}" x2="{point[0]}" y2="{point[1]}" stroke="rgba(200,200,200,0.2)" stroke-width="1"/>')
     
-    # Polígono del pentágono (referencia)
     pentagon_path = "M " + " L ".join([f"{p[0]},{p[1]}" for p in points]) + " Z"
     svg_parts.append(f'<path d="{pentagon_path}" fill="none" stroke="rgba(100,100,100,0.2)" stroke-width="1"/>')
     
-    # Polígono de datos (relleno)
     data_path = "M " + " L ".join([f"{p[0]},{p[1]}" for p in data_points]) + " Z"
     rgb_color = color.lstrip('#')
     rgb_tuple = tuple(int(rgb_color[i:i+2], 16) for i in (0, 2, 4))
     svg_parts.append(f'<path d="{data_path}" fill="rgba({rgb_tuple[0]},{rgb_tuple[1]},{rgb_tuple[2]},0.2)" stroke="{color}" stroke-width="2"/>')
     
-    # Puntos de datos
     for point in data_points:
         svg_parts.append(f'<circle cx="{point[0]}" cy="{point[1]}" r="4" fill="{color}" stroke="white" stroke-width="2"/>')
     
-    # Etiquetas
     label_positions = [
-        (center_x, center_y - radius - 30),  # Arriba
-        (center_x + radius * 0.9, center_y - radius * 0.3 - 20),  # Arriba derecha
-        (center_x + radius * 0.55, center_y + radius * 0.75 - 15),  # Abajo derecha
-        (center_x - radius * 0.55, center_y + radius * 0.75 - 15),  # Abajo izquierda
-        (center_x - radius * 0.9, center_y - radius * 0.3 - 20),  # Arriba izquierda
+        (center_x, center_y - radius - 30),
+        (center_x + radius * 0.9, center_y - radius * 0.3 - 20),
+        (center_x + radius * 0.55, center_y + radius * 0.75 - 15),
+        (center_x - radius * 0.55, center_y + radius * 0.75 - 15),
+        (center_x - radius * 0.9, center_y - radius * 0.3 - 20),
     ]
     
     for i, (x, y) in enumerate(label_positions):
         svg_parts.append(f'<text x="{x}" y="{y}" text-anchor="middle" font-size="11" font-family="Arial" fill="#333" font-weight="500">{labels[i]}</text>')
     
-    # Valores en el centro de cada eje
     for i, (x, y) in enumerate(data_points):
-        # Offset del valor hacia afuera
         offset_x = (x - center_x) * 0.3
         offset_y = (y - center_y) * 0.3
         val_x = x + offset_x
@@ -1194,20 +1023,16 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, jugador_data=No
     bandera = obtener_bandera(nombre)
     nombre_display = f"{bandera} {nombre}" if bandera else f"🎯 {nombre}"
     
-    # Extraer stats adicionales
     checkouts_prom = jugador_data.get("checkouts", 0) if jugador_data else 0
     pct_victorias = jugador_data.get("pct_victorias", 0) if jugador_data else 0
     promedio_dardos = jugador_data.get("promedio_dardos", 0) if jugador_data else 0
     
     st.markdown(f"<h3 style='color: {color}; text-align: center;'>{nombre_display}</h3>", unsafe_allow_html=True)
     
-    # Renderizar pentágono con promedio de dardos
     render_pentagon_habilidades(nombre, pr, lam_180, promedio_dardos, checkouts_prom, pct_victorias, color)
     
-    # Mostrar valores numéricos centrados y visibles
     st.markdown("---")
     
-    # Crear contenedor HTML centrado para los datos (ahora con 6 métricas)
     html_metrics = f"""
     <div style="text-align: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin: 20px 0;">
         <div>
@@ -1349,7 +1174,6 @@ def mostrar_cuota_justa(cuota):
 
 def render_mas_180s_barras(j1_nombre, p_j1, j2_nombre, p_j2, p_emp, j1_color="#1f77b4", j2_color="#ff7f0e"):
     """Renderiza barras para 'quién hace más 180s' con empate en el centro."""
-    # Validar probabilidades
     p_j1 = sanitize_prob(p_j1)
     p_j2 = sanitize_prob(p_j2)
     p_emp = sanitize_prob(p_emp)
@@ -1654,7 +1478,6 @@ def render_value_bets():
         st.markdown("#### 🎯 Mercado de 180s (Distribución Poisson)")
         st.markdown("**Organizados por jugador y nivel de amenaza**")
         
-        # Jugador 1
         st.markdown(f"##### 🔵 {j1['nombre_original']}")
         col_a, col_b = st.columns(2)
         
@@ -1686,7 +1509,6 @@ def render_value_bets():
         
         st.markdown("---")
         
-        # Jugador 2
         st.markdown(f"##### 🟠 {j2['nombre_original']}")
         col_a, col_b = st.columns(2)
         
@@ -1718,7 +1540,6 @@ def render_value_bets():
         
         st.markdown("---")
         
-        # Ambos
         st.markdown("##### 🤝 Ambos Jugadores")
         col_a, col_b, col_c = st.columns(3)
         
@@ -1941,9 +1762,7 @@ def render_value_bets():
         st.info("ℹ️ No se encontraron value bets con las cuotas introducidas")
 
 # ═══════════════════════════════════════════════════════════════
-# SIDEBAR
-# ═══════════════════════════════════════════════════════════════
-# NUEVA NAVEGACIÓN: 3 PESTAÑAS PRINCIPALES
+# SIDEBAR CON CONTROL DEL SCRIPT
 # ═══════════════════════════════════════════════════════════════
 
 st.sidebar.title("🎯 MODUS SUPER SERIES")
@@ -1965,9 +1784,98 @@ if st.sidebar.button("♻️ Forzar Refresh", help="Recarga inmediata"):
     st.session_state.last_update = {}
     st.rerun()
 
+# ═══════════════════════════════════════════════════════════════
+# 🎯 CONTROL DEL SCRIPT (OPCIÓN 2 - CON TU URL)
+# ═══════════════════════════════════════════════════════════════
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ⚙️ Ejecutar Script")
+
+# ✅ TU URL DE GOOGLE APPS SCRIPT
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzvlYBzgxFLxuzESl-j-R2vclAQnndxIdHak5IvCPLtTBJnMbn3TxBBPbrYzH6vL-hx/exec"
+
+if st.sidebar.button("▶️ Ejecutar Actualización", type="primary", use_container_width=True, help="Ejecuta el script de actualización de datos"):
+    
+    st.sidebar.info("🔄 Ejecutando script...")
+    
+    try:
+        # Llamar al script vía HTTP POST
+        response = requests.post(SCRIPT_URL, timeout=120)
+        
+        if response.status_code == 200:
+            st.sidebar.success("✅ Script ejecutado correctamente")
+            st.sidebar.info("📊 Los datos se actualizarán en breve...")
+            st.balloons()
+            
+            # Esperar 2 segundos y refrescar caché
+            time.sleep(2)
+            st.cache_data.clear()
+            st.session_state.last_update = {}
+            st.rerun()
+        
+        else:
+            st.sidebar.warning(f"⚠️ Respuesta HTTP {response.status_code}")
+            st.sidebar.info("💡 El script podría estar ejecutándose. Intenta refrescar en 5 segundos.")
+    
+    except requests.exceptions.Timeout:
+        st.sidebar.warning("⏱️ Tiempo de espera agotado (>120s)")
+        st.sidebar.info("💡 El script está ejecutándose en segundo plano. Los datos se actualizarán en breve.")
+    
+    except requests.exceptions.ConnectionError:
+        st.sidebar.error("🔗 Error de conexión")
+        st.sidebar.error("Verifica tu conexión a internet")
+    
+    except Exception as e:
+        st.sidebar.error(f"❌ Error: {str(e)}")
+
 # ─────────────────────────────────────────────
-# SECCIÓN LIVE
+# INFORMACIÓN DEL SCRIPT
 # ─────────────────────────────────────────────
+
+with st.sidebar.expander("ℹ️ Información del Script", expanded=False):
+    st.markdown("""
+    ### 📊 Función: `actualizarDatosCompletos()`
+    
+    **¿Qué hace?**
+    - ✅ Obtiene datos de la API
+    - ✅ Actualiza estadísticas de jugadores
+    - ✅ Limpia datos viejos
+    - ✅ Rellena hojas de Excel
+    
+    **Ejecución Automática:**
+    - ⏰ Cada 10 minutos
+    - 📅 Lunes-Sábado en horarios de juego
+    - 🗑️ Domingos ≥ 5 AM (limpieza completa)
+    
+    **Horarios:**
+    - Grupo A: Lun-Mié 10:00-16:00
+    - Grupo C: Jue-Vie 13:00-19:00
+    - Grupo B + Final: 22:00-03:00
+    
+    **Este botón:** Ejecuta el script de inmediato
+    """)
+
+# ─────────────────────────────────────────────
+# ESTADO DEL SCRIPT
+# ─────────────────────────────────────────────
+
+with st.sidebar.expander("📈 Estado", expanded=False):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("Automático", "✅ Activo")
+    
+    with col2:
+        st.metric("Intervalo", "10 minutos")
+    
+    st.divider()
+    st.markdown("**Estado:** Script en ejecución automática")
+    st.markdown("**Última ejecución:** Ver en Google Apps Script → Logs")
+
+# ─────────────────────────────────────────────
+# MAIN - NAVEGACIÓN
+# ─────────────────────────────────────────────
+
 if "🔴 LIVE" in opcion_principal:
     st.title("🔴 LIVE")
     
@@ -1977,13 +1885,11 @@ if "🔴 LIVE" in opcion_principal:
         st.success(f"✅ Jornada activa: **{jornada_actual}** (datos en tiempo real)")
         st.markdown("---")
         
-        # Obtener partidos directamente de la API (sin caché de Google Sheets)
         partidos_vivos = obtener_partidos_vivos_api()
         
         if partidos_vivos:
             st.subheader("⚔️ Partidos en Vivo (Actualización cada 10 segundos)")
             
-            # Crear tabla de partidos
             tabla_partidos = []
             for p in partidos_vivos:
                 tabla_partidos.append({
@@ -2009,7 +1915,6 @@ if "🔴 LIVE" in opcion_principal:
         else:
             st.warning("⚠️ No se pudieron obtener datos de la API")
             
-            # Fallback: usar datos de Google Sheets
             st.info("📊 Usando datos guardados en Google Sheets...")
             d1, d2 = cargar_todo(url_actual, jornada_actual, CORTES.get(jornada_actual, 2))
             
@@ -2017,13 +1922,11 @@ if "🔴 LIVE" in opcion_principal:
                 st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
     
     else:
-        # Mostrar próxima jornada disponible
         proxima, url_proxima = get_proxima_jornada()
         
         st.info(f"📅 **Próxima jornada:** {proxima}")
         st.markdown("---")
         
-        # Cargar y mostrar la próxima jornada desde Google Sheets
         d1, d2 = cargar_todo(url_proxima, proxima, CORTES.get(proxima, 2))
         
         if proxima in st.session_state.last_update:
@@ -2055,19 +1958,12 @@ if "🔴 LIVE" in opcion_principal:
             st.subheader("⚔️ Partidos")
             st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
 
-# ─────────────────────────────────────────────
-# SECCIÓN VALUE BETS
-# ─────────────────────────────────────────────
 elif "💰 VALUE BETS" in opcion_principal:
     render_value_bets()
 
-# ─────────────────────────────────────────────
-# SECCIÓN RESULTADOS Y ESTADÍSTICAS
-# ─────────────────────────────────────────────
 elif "📊 RESULTADOS Y ESTADÍSTICAS" in opcion_principal:
     st.title("📊 RESULTADOS Y ESTADÍSTICAS")
     
-    # Desplegable para seleccionar jornada
     jornadas_dict = {
         "Grupo A Lunes": URLS["Grupo A Lunes"],
         "Grupo A Martes": URLS["Grupo A Martes"],
@@ -2085,7 +1981,6 @@ elif "📊 RESULTADOS Y ESTADÍSTICAS" in opcion_principal:
     
     st.markdown("---")
     
-    # Cargar y mostrar los datos
     d1, d2 = cargar_todo(selected_url, selected, CORTES.get(selected, 2))
     
     if selected in st.session_state.last_update:
