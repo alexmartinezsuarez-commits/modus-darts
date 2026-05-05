@@ -568,150 +568,93 @@ def similitud_nombres(nombre1, nombre2, umbral=0.6):
 @st.cache_data(ttl=30, show_spinner=False)
 def obtener_cuotas_winamax(j1_nombre, j2_nombre):
     """
-    Obtiene cuotas de Winamax (requiere playwright instalado).
+    Obtiene cuotas de Winamax usando Playwright.
+    Devuelve las cuotas extraídas del sitio.
     """
     
     try:
         from playwright.sync_api import sync_playwright
         from bs4 import BeautifulSoup
     except ImportError:
-        return {
-            "error": "⚠️ Playwright no instalado. La función de Winamax está deshabilitada.",
-            "victoria": {}, "180s": {}, "mas_180s": {}, 
-            "handi_j1": {}, "handi_j2": {}, "total_legs": {}
-        }
+        return {"error": "⚠️ Playwright no disponible"}
     
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled"]
+            # Lanzar navegador
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             )
             
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                extra_http_headers={
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                    "Accept-Language": "es-ES,es;q=0.9",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "DNT": "1",
-                    "Connection": "keep-alive",
-                    "Upgrade-Insecure-Requests": "1"
-                }
-            )
+            # Ir a Winamax
+            page.goto("https://www.winamax.es/apuestas", timeout=30000)
+            page.wait_for_timeout(2000)
             
-            page = context.new_page()
-            
-            page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => false,
-                });
-            """)
-            
+            # Buscar y hacer clic en Dardos
             try:
-                page.goto("https://www.winamax.es/apuestas", timeout=30000, wait_until="domcontentloaded")
-                time.sleep(2)
+                page.click('button:has-text("Dardos"), a:has-text("Dardos"), [data-sport="darts"]')
+                page.wait_for_timeout(2000)
+            except:
+                browser.close()
+                return {"error": "❌ No se encontró sección de Dardos"}
+            
+            # Buscar y hacer clic en MODUS
+            try:
+                page.click('button:has-text("MODUS"), [data-league*="MODUS"], [data-league*="Modus"]')
+                page.wait_for_timeout(3000)
+            except:
+                browser.close()
+                return {"error": "❌ No se encontró MODUS Super Series"}
+            
+            # Obtener HTML
+            html = page.content()
+            soup = BeautifulSoup(html, "html.parser")
+            
+            # Buscar el partido
+            cuotas_encontradas = {}
+            
+            # Buscar elementos con cuotas
+            elementos = soup.find_all("div", {"class": lambda x: x and "odd" in x.lower()})
+            
+            if not elementos:
+                elementos = soup.find_all("div", {"class": lambda x: x and "match" in x.lower()})
+            
+            # Extraer cuotas
+            for elem in elementos:
+                texto = elem.get_text().lower()
                 
-                try:
-                    page.click("text=Dardos", timeout=10000)
-                    time.sleep(2)
-                except:
-                    try:
-                        page.click('a:has-text("Dardos")')
-                        time.sleep(2)
-                    except:
-                        return {
-                            "error": "❌ No se encontró sección de Dardos",
-                            "victoria": {}, "180s": {}, "mas_180s": {}, 
-                            "handi_j1": {}, "handi_j2": {}, "total_legs": {}
-                        }
-                
-                try:
-                    page.click("text=MODUS", timeout=10000)
-                    time.sleep(2)
-                except:
-                    try:
-                        page.click('text=Modus')
-                        time.sleep(2)
-                    except:
-                        return {
-                            "error": "❌ No se encontró MODUS Super Series",
-                            "victoria": {}, "180s": {}, "mas_180s": {}, 
-                            "handi_j1": {}, "handi_j2": {}, "total_legs": {}
-                        }
-                
-                page.wait_for_selector("[class*='match'], [data-testid*='match'], .game-row, [class*='event']", timeout=15000)
-                time.sleep(2)
-                
-                html = page.content()
-                
-                soup = BeautifulSoup(html, "html.parser")
-                
-                partidos = soup.find_all("div", recursive=True, limit=50)
-                
-                partido_encontrado = None
-                for partido in partidos:
-                    texto = partido.get_text()
+                # Verificar si contiene ambos nombres de jugadores
+                if j1_nombre.lower() in texto and j2_nombre.lower() in texto:
+                    # Buscar números de cuotas
+                    import re
+                    cuotas_num = re.findall(r'\d+\.\d{2}', elem.get_text())
                     
-                    has_j1 = similitud_nombres(j1_nombre, texto, umbral=0.5)
-                    has_j2 = similitud_nombres(j2_nombre, texto, umbral=0.5)
-                    
-                    if has_j1 and has_j2:
-                        partido_encontrado = partido
+                    if cuotas_num:
+                        cuotas_encontradas = {
+                            "victoria_j1": float(cuotas_num[0]) if len(cuotas_num) > 0 else None,
+                            "victoria_j2": float(cuotas_num[1]) if len(cuotas_num) > 1 else None,
+                            "raw": cuotas_num
+                        }
                         break
-                
-                if not partido_encontrado:
-                    return {
-                        "error": f"❌ Partido {j1_nombre} vs {j2_nombre} no encontrado",
-                        "victoria": {}, "180s": {}, "mas_180s": {}, 
-                        "handi_j1": {}, "handi_j2": {}, "total_legs": {}
-                    }
-                
-                cuotas = {
-                    "victoria": {"j1": None, "j2": None},
-                    "180s": {
-                        "j1_05": None,
-                        "j1_15": None,
-                        "j2_05": None,
-                        "j2_15": None,
-                        "ambos_05": None,
-                        "ambos_15": None,
-                        "ambos_25": None,
-                    },
-                    "mas_180s": {"j1": None, "j2": None, "empate": None},
-                    "handi_j1": {
-                        "minus_15": None,
-                        "plus_15": None,
-                        "minus_25": None,
-                        "plus_25": None,
-                    },
-                    "handi_j2": {
-                        "minus_15": None,
-                        "plus_15": None,
-                        "minus_25": None,
-                        "plus_25": None,
-                    },
-                    "total_legs": {"over": None, "under": None},
+            
+            browser.close()
+            
+            if cuotas_encontradas:
+                return {
+                    "success": True,
+                    "cuotas": cuotas_encontradas,
                     "error": None
                 }
-                
-                browser.close()
-                
-                return cuotas
-            
-            except Exception as e:
-                browser.close()
+            else:
                 return {
-                    "error": f"❌ Error durante scraping: {str(e)[:50]}",
-                    "victoria": {}, "180s": {}, "mas_180s": {}, 
-                    "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+                    "success": False,
+                    "error": f"❌ No se encontraron cuotas para {j1_nombre} vs {j2_nombre}"
                 }
     
     except Exception as e:
         return {
-            "error": f"❌ Error: {str(e)[:50]}",
-            "victoria": {}, "180s": {}, "mas_180s": {}, 
-            "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+            "success": False,
+            "error": f"❌ Error al acceder a Winamax: {str(e)[:80]}"
         }
 
 def calcular_tendencia(valor_actual, valor_anterior):
@@ -1320,17 +1263,18 @@ def render_value_bets():
             if st.button("🔢 Calcular", type="primary", use_container_width=True, help="Calcular probabilidades"):
                 st.session_state.vb_calcular = True
         with col3_2:
-            if st.button("🌐 Winamax", help="Obtener cuotas de Winamax (requiere Playwright)"):
-                try:
-                    with st.spinner("🔄 Obteniendo cuotas de Winamax..."):
-                        cuotas = obtener_cuotas_winamax(j1_sel, j2_sel)
-                        if cuotas.get("error"):
-                            st.info(f"ℹ️ {cuotas['error']}\n\n💡 **Solución:** Rellena las cuotas manualmente en los campos de entrada.")
-                        else:
-                            st.session_state.cuotas_winamax = cuotas
-                            st.success("✅ Cuotas cargadas desde Winamax")
-                except Exception as e:
-                    st.warning(f"⚠️ No se pudo conectar a Winamax: {str(e)[:50]}\n\n💡 **Rellena las cuotas manualmente en los campos de entrada.**")
+            if st.button("🌐 Winamax", help="Obtener cuotas automáticamente"):
+                with st.spinner("🔄 Obteniendo cuotas de Winamax..."):
+                    resultado = obtener_cuotas_winamax(j1_sel, j2_sel)
+                    
+                    if resultado.get("success"):
+                        cuotas = resultado.get("cuotas", {})
+                        st.session_state.cuotas_winamax = cuotas
+                        st.session_state.cuota_j1_victoria = cuotas.get("victoria_j1")
+                        st.session_state.cuota_j2_victoria = cuotas.get("victoria_j2")
+                        st.success("✅ Cuotas cargadas desde Winamax - Recarga la página para ver los cambios")
+                    else:
+                        st.warning(f"⚠️ {resultado.get('error', 'Error desconocido')}")
 
     if not st.session_state.vb_calcular:
         st.info("👆 Selecciona los jugadores y pulsa **Calcular**")
