@@ -2,3 +2,6 @@ streamlit
 pandas
 requests
 scipy
+playwright
+playwright-stealth
+thefuzz
