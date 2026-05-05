@@ -30,7 +30,7 @@ CORTES = {
     "Final Sábado":       {"izq_filas": (5, 24), "izq_cols": (0, 5), "der_nombres": 6,  "der_cols": (6, 12)},
 }
 
-PESTANAS_CON_STATS = [k for k in URLS if k not in ("Resumen Semanal",)]
+PESTANAS_CON_STATS = list(URLS.keys())
 
 # ═══════════════════════════════════════════════════════════════
 # BANDERAS
@@ -444,8 +444,9 @@ def buscar_jugador(nombre, db):
 
 def calcular_legs_por_partido_correcto(df_resultados, nombre_jugador):
     """
-    Calcula: (legs ganados + legs perdidos) / número de partidos
-    Ejemplo: Si jugó 4-1, 4-2, 3-4 → (4+1+4+2+3+4)/3 = 18/3 = 6.0
+    Calcula: (suma total de legs en cada partido) / número de partidos
+    Ejemplo: 4-1, 4-2, 3-4 → (5+6+7)/3 = 6.0
+    Más robusto: maneja espacios, diferentes formatos, etc.
     """
     if df_resultados is None or len(df_resultados) == 0:
         return None
@@ -455,42 +456,64 @@ def calcular_legs_por_partido_correcto(df_resultados, nombre_jugador):
     partidos_jugados = 0
     
     try:
+        # Iterar cada 2 filas (estructura: J1, J2, J1, J2, etc)
         for i in range(0, len(df_resultados) - 1, 2):
-            fila_j1 = df_resultados.iloc[i]
-            fila_j2 = df_resultados.iloc[i + 1]
-            
-            nombre_j1 = str(fila_j1.iloc[0]).lower().strip()
-            nombre_j2 = str(fila_j2.iloc[0]).lower().strip()
-            
-            resultado_j1 = str(fila_j1.iloc[1]) if len(fila_j1) > 1 else ""
-            resultado_j2 = str(fila_j2.iloc[1]) if len(fila_j2) > 1 else ""
-            
-            if nombre_lower in nombre_j1 or nombre_j1 in nombre_lower:
-                try:
-                    partes = resultado_j1.split('-')
-                    if len(partes) == 2:
-                        legs_j1 = int(partes[0])
-                        legs_j2 = int(partes[1])
-                        legs_totales += legs_j1 + legs_j2
-                        partidos_jugados += 1
-                except:
-                    pass
-            
-            elif nombre_lower in nombre_j2 or nombre_j2 in nombre_lower:
-                try:
-                    partes = resultado_j2.split('-')
-                    if len(partes) == 2:
-                        legs_j1 = int(partes[0])
-                        legs_j2 = int(partes[1])
-                        legs_totales += legs_j1 + legs_j2
-                        partidos_jugados += 1
-                except:
-                    pass
+            try:
+                fila_j1 = df_resultados.iloc[i]
+                fila_j2 = df_resultados.iloc[i + 1]
+                
+                # Extraer nombres (primera columna)
+                nombre_j1 = str(fila_j1.iloc[0]).lower().strip()
+                nombre_j2 = str(fila_j2.iloc[0]).lower().strip()
+                
+                # Extraer resultado (segunda columna)
+                resultado_str = str(fila_j1.iloc[1]) if len(fila_j1) > 1 else ""
+                
+                # Verificar si es el jugador buscado (J1)
+                if nombre_lower in nombre_j1 or nombre_j1 in nombre_lower:
+                    # Parsear resultado de manera robusta
+                    # Limpia espacios: "4 - 1" → "4-1"
+                    resultado_limpio = resultado_str.replace(" ", "").strip()
+                    
+                    # Buscar patrón de números separados por guion
+                    if "-" in resultado_limpio:
+                        partes = resultado_limpio.split("-")
+                        try:
+                            # Tomar primeros 2 números encontrados
+                            nums = [int(p) for p in partes if p.isdigit()]
+                            if len(nums) >= 2:
+                                legs_j1 = nums[0]
+                                legs_j2 = nums[1]
+                                legs_totales += legs_j1 + legs_j2
+                                partidos_jugados += 1
+                        except (ValueError, IndexError):
+                            pass
+                
+                # También verificar si es J2
+                elif nombre_lower in nombre_j2 or nombre_j2 in nombre_lower:
+                    # Resultado de J2 está en la siguiente fila
+                    resultado_str = str(fila_j2.iloc[1]) if len(fila_j2) > 1 else ""
+                    resultado_limpio = resultado_str.replace(" ", "").strip()
+                    
+                    if "-" in resultado_limpio:
+                        partes = resultado_limpio.split("-")
+                        try:
+                            nums = [int(p) for p in partes if p.isdigit()]
+                            if len(nums) >= 2:
+                                legs_j1 = nums[0]
+                                legs_j2 = nums[1]
+                                legs_totales += legs_j1 + legs_j2
+                                partidos_jugados += 1
+                        except (ValueError, IndexError):
+                            pass
+            except Exception as e:
+                # Saltar partidos malformados
+                continue
         
         if partidos_jugados > 0:
-            return legs_totales / partidos_jugados
+            return round(legs_totales / partidos_jugados, 2)
         return None
-    except:
+    except Exception as e:
         return None
 
 def widget_mercado_compacto(mercado, prob, idx):
@@ -624,7 +647,7 @@ elif opcion == "💰 VALUE BETS":
     with st.expander("⚙️ Configuración", expanded=True):
         fuente = st.selectbox(
             "📂 Fuente de datos:",
-            PESTANAS_CON_STATS,
+            list(URLS.keys()),
             key="vb_fuente"
         )
     
@@ -763,57 +786,68 @@ elif opcion == "📊 RESULTADOS":
         tiempo = (datetime.now() - st.session_state.last_update[sel]).seconds
         st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
     
-    if d1 is not None and len(d1) > 0:
+    # Mostrar tabla de resultados SOLO si no es Resumen Semanal
+    if sel != "Resumen Semanal" and d1 is not None and len(d1) > 0:
         st.subheader("⚔️ Resultados")
         st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
     
+    # Mostrar estadísticas
     if d2 is not None and len(d2) > 0:
-        st.subheader("📈 Estadísticas por Jugador")
+        if sel == "Resumen Semanal":
+            st.subheader("📈 Resumen Semanal")
+        else:
+            st.subheader("📈 Estadísticas por Jugador")
         
         for player, stats in d2.items():
             bandera = obtener_bandera(player)
             player_display = f"{bandera} {player}" if bandera else f"👤 {player}"
             
             with st.expander(player_display, expanded=False):
-                for etiqueta in ESTADISTICAS_MOSTRAR:
-                    
-                    # ESPECIAL: Legs por partido - calcular desde resultados
-                    if "legs" in etiqueta.lower() and "partido" in etiqueta.lower():
-                        legs_corregido = calcular_legs_por_partido_correcto(d1, player)
-                        if legs_corregido is not None:
-                            st.write(f"**{etiqueta}:** {legs_corregido:.2f}")
-                        else:
-                            st.write(f"**{etiqueta}:** -")
-                        continue
-                    
-                    valor = "-"
-                    keywords = [kw for kw in etiqueta.lower().split() if len(kw) > 3]
-                    
+                if sel == "Resumen Semanal":
+                    # Resumen Semanal: mostrar todos los datos sin filtrar
                     for k, v in stats.items():
-                        if any(kw in k.lower() for kw in keywords):
-                            valor = v
-                            break
-                    
-                    if valor != "-":
-                        debe_tendencia = any(
-                            metrica in etiqueta.lower()
-                            for metrica in METRICAS_CON_TENDENCIA
-                        )
+                        st.write(f"**{k}:** {v}")
+                else:
+                    # Jornadas diarias: mostrar solo estadísticas seleccionadas
+                    for etiqueta in ESTADISTICAS_MOSTRAR:
                         
-                        if debe_tendencia:
-                            valor_actual = extraer_ultimo_valor(stats, keywords)
-                            media = calcular_media_stats(stats, keywords)
+                        # ESPECIAL: Legs por partido - calcular desde resultados
+                        if "legs" in etiqueta.lower() and "partido" in etiqueta.lower():
+                            legs_corregido = calcular_legs_por_partido_correcto(d1, player)
+                            if legs_corregido is not None:
+                                st.write(f"**{etiqueta}:** {legs_corregido}")
+                            else:
+                                st.write(f"**{etiqueta}:** -")
+                            continue
+                        
+                        valor = "-"
+                        keywords = [kw for kw in etiqueta.lower().split() if len(kw) > 3]
+                        
+                        for k, v in stats.items():
+                            if any(kw in k.lower() for kw in keywords):
+                                valor = v
+                                break
+                        
+                        if valor != "-":
+                            debe_tendencia = any(
+                                metrica in etiqueta.lower()
+                                for metrica in METRICAS_CON_TENDENCIA
+                            )
                             
-                            if valor_actual is not None and media is not None:
-                                tendencia = calcular_tendencia_stat(valor_actual, media, umbral=10.0)
-                                emoji = emoji_tendencia(tendencia)
-                                st.write(f"**{etiqueta}:** {valor} {emoji}")
+                            if debe_tendencia:
+                                valor_actual = extraer_ultimo_valor(stats, keywords)
+                                media = calcular_media_stats(stats, keywords)
+                                
+                                if valor_actual is not None and media is not None:
+                                    tendencia = calcular_tendencia_stat(valor_actual, media, umbral=10.0)
+                                    emoji = emoji_tendencia(tendencia)
+                                    st.write(f"**{etiqueta}:** {valor} {emoji}")
+                                else:
+                                    st.write(f"**{etiqueta}:** {valor}")
                             else:
                                 st.write(f"**{etiqueta}:** {valor}")
                         else:
-                            st.write(f"**{etiqueta}:** {valor}")
-                    else:
-                        st.write(f"**{etiqueta}:** -")
+                            st.write(f"**{etiqueta}:** -")
 
 st.markdown("---")
 st.markdown("""
