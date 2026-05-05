@@ -530,32 +530,85 @@ def buscar_jugador(nombre, db):
 # WIDGETS VISUALES
 # ═══════════════════════════════════════════════════════════════
 
+def render_pentagon_habilidades(nombre, pr, lam_180, lam_legs, checkouts, pct_vic, color="#1f77b4"):
+    """Renderiza un pentágono de habilidades (radar chart) para un jugador."""
+    import plotly.graph_objects as go
+    
+    # Normalizar datos a escala 0-100
+    # Power Ranking: 0-100 (ya está en esa escala)
+    # λ 180s: máximo ~2.5, escalar a 0-100
+    # λ Legs: máximo ~7, escalar a 0-100
+    # Checkouts %: ya está en porcentaje
+    # % Victorias: ya está en porcentaje
+    
+    pr_norm = min(100, max(0, pr))
+    lam_180_norm = min(100, max(0, (lam_180 / 3.0) * 100))  # Máximo ~3
+    lam_legs_norm = min(100, max(0, (lam_legs / 7.5) * 100))  # Máximo ~7.5
+    checkouts_norm = min(100, max(0, checkouts))
+    pct_vic_norm = min(100, max(0, pct_vic))
+    
+    categories = ["Power Ranking", "λ 180s", "λ Legs", "Checkouts %", "% Victorias"]
+    values = [pr_norm, lam_180_norm, lam_legs_norm, checkouts_norm, pct_vic_norm]
+    
+    fig = go.Figure(data=go.Scatterpolar(
+        r=values,
+        theta=categories,
+        fill='toself',
+        name=nombre,
+        line=dict(color=color, width=2),
+        fillcolor=color + "33",  # Color con transparencia
+        hovertemplate='<b>%{theta}</b><br>%{r:.1f}<extra></extra>'
+    ))
+    
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                tickfont=dict(size=8),
+                gridcolor='rgba(200,200,200,0.3)'
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=9)
+            ),
+            bgcolor='rgba(240,240,240,0.1)'
+        ),
+        showlegend=False,
+        margin=dict(l=40, r=40, t=40, b=40),
+        height=400,
+        font=dict(size=10, family="Arial, sans-serif"),
+        plot_bgcolor='white'
+    )
+    
+    return fig
+
 def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, jugador_data=None):
-    """Tarjeta visual del jugador con stats."""
+    """Tarjeta visual del jugador con pentágono de habilidades."""
     color = "#1f77b4" if is_left else "#ff7f0e"
     
     bandera = obtener_bandera(nombre)
     nombre_display = f"{bandera} {nombre}" if bandera else f"🎯 {nombre}"
     
     # Extraer stats adicionales
-    checkouts_prom = 0
-    pct_victorias = 0
+    checkouts_prom = jugador_data.get("checkouts", 0) if jugador_data else 0
+    pct_victorias = jugador_data.get("pct_victorias", 0) if jugador_data else 0
     
-    if jugador_data:
-        checkouts_prom = jugador_data.get("checkouts", 0)
-        pct_victorias = jugador_data.get("pct_victorias", 0)
+    st.markdown(f"<h3 style='color: {color}; text-align: center;'>{nombre_display}</h3>", unsafe_allow_html=True)
     
-    col1, col2 = st.columns([1, 1])
+    # Renderizar pentágono
+    fig = render_pentagon_habilidades(nombre, pr, lam_180, lam_legs, checkouts_prom, pct_victorias, color)
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     
+    # Mostrar valores numéricos en pequeño
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Power Ranking", f"{pr:.1f}")
-        st.metric("λ 180s", f"{lam_180:.2f}")
-    
+        st.caption(f"**PR:** {pr:.1f}")
+        st.caption(f"**180s:** {lam_180:.2f}")
     with col2:
-        st.metric("λ Legs", f"{lam_legs:.2f}")
-        st.metric("Checkouts %", f"{checkouts_prom:.1f}%")
-    
-    st.metric("% Victorias", f"{pct_victorias:.0f}%")
+        st.caption(f"**Legs:** {lam_legs:.2f}")
+        st.caption(f"**Chk:** {checkouts_prom:.0f}%")
+    with col3:
+        st.caption(f"**Vic:** {pct_victorias:.0f}%")
 
 def render_barras_enfrentadas(j1_nombre, j1_prob, j2_nombre, j2_prob, j1_color="#1f77b4", j2_color="#ff7f0e"):
     """Renderiza dos barras horizontales enfrentadas (tipo comparación)."""
