@@ -4,7 +4,7 @@ import numpy as np
 from scipy.stats import poisson
 from datetime import datetime
 from difflib import SequenceMatcher
-import asyncio
+import time
 
 st.set_page_config(page_title="Modus Super Series App", layout="wide", page_icon="🎯")
 
@@ -429,138 +429,190 @@ def similitud_nombres(nombre1, nombre2, umbral=0.6):
 @st.cache_data(ttl=300, show_spinner=False)
 def obtener_cuotas_winamax(j1_nombre, j2_nombre):
     """
-    Obtiene cuotas de Winamax para un partido MODUS.
-    Usa Playwright + stealth para evitar bloqueos.
+    Obtiene cuotas de Winamax usando Playwright (sync API).
+    Sin playwright_stealth, usando user_agent y headers manuales.
     
-    Retorna dict con estructura:
-    {
-        "victoria": {"j1": 1.50, "j2": 2.10},
-        "180s": {"j1": 1.80, "j2": 2.00, "empate": 3.50},
-        "mas_180s": {"j1": 1.50, "j2": 2.10, "empate": 3.00},
-        "handi_j1_minus_1_5": 1.80,
-        "handi_j1_plus_1_5": 1.90,
-        ... (más hándicaps)
-        "total_legs_over": 1.90,
-        "total_legs_under": 1.90,
-        "error": None o mensaje de error
-    }
+    Retorna dict con estructura de cuotas o error.
     """
     
     try:
-        from playwright.async_api import async_playwright
-        from playwright_stealth import stealth_async
+        from playwright.sync_api import sync_playwright
+        from bs4 import BeautifulSoup
     except ImportError:
         return {
-            "error": "⚠️ Instala: pip install playwright playwright-stealth",
+            "error": "⚠️ Instala: pip install playwright beautifulsoup4",
             "victoria": {}, "180s": {}, "mas_180s": {}, 
             "handi_j1": {}, "handi_j2": {}, "total_legs": {}
         }
     
-    async def scrape():
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
+    try:
+        with sync_playwright() as p:
+            # Lanzar navegador con user_agent realista
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"]
+            )
             
-            # Aplicar stealth
-            await stealth_async(page)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                extra_http_headers={
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language": "es-ES,es;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "DNT": "1",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1"
+                }
+            )
+            
+            page = context.new_page()
+            
+            # Evitar detección de bot
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => false,
+                });
+            """)
             
             try:
-                # Navegar a MODUS Super Series en Winamax
-                await page.goto("https://www.winamax.es/apuestas", timeout=30000)
-                await page.wait_for_load_state("networkidle")
+                # Navegar a Winamax
+                page.goto("https://www.winamax.es/apuestas", timeout=30000, wait_until="domcontentloaded")
+                time.sleep(2)  # Esperar carga
                 
-                # Buscar sección de Dardos
-                await page.click("text=Dardos", timeout=10000)
-                await page.wait_for_load_state("networkidle")
+                # Buscar y hacer clic en Dardos
+                try:
+                    page.click("text=Dardos", timeout=10000)
+                    time.sleep(2)
+                except:
+                    # Intentar alternativas
+                    try:
+                        page.click('a:has-text("Dardos")')
+                        time.sleep(2)
+                    except:
+                        return {
+                            "error": "❌ No se encontró sección de Dardos",
+                            "victoria": {}, "180s": {}, "mas_180s": {}, 
+                            "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+                        }
                 
                 # Buscar MODUS Super Series
-                await page.click("text=MODUS", timeout=10000)
-                await page.wait_for_load_state("networkidle")
+                try:
+                    page.click("text=MODUS", timeout=10000)
+                    time.sleep(2)
+                except:
+                    try:
+                        page.click('text=Modus')
+                        time.sleep(2)
+                    except:
+                        return {
+                            "error": "❌ No se encontró MODUS Super Series",
+                            "victoria": {}, "180s": {}, "mas_180s": {}, 
+                            "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+                        }
                 
                 # Esperar a que carguen los partidos
-                await page.wait_for_selector("[data-testid*='match']", timeout=15000)
+                page.wait_for_selector("[class*='match'], [data-testid*='match'], .game-row, [class*='event']", timeout=15000)
+                time.sleep(2)
                 
-                # Obtener HTML de la página
-                html = await page.content()
+                # Obtener HTML
+                html = page.content()
                 
-                await browser.close()
-                return html
+                # Parsear con BeautifulSoup
+                soup = BeautifulSoup(html, "html.parser")
+                
+                # Buscar partido con fuzzy matching
+                partidos = soup.find_all("div", recursive=True, limit=50)
+                
+                partido_encontrado = None
+                for partido in partidos:
+                    texto = partido.get_text()
+                    
+                    # Verificar si contiene ambos nombres con fuzzy matching
+                    has_j1 = similitud_nombres(j1_nombre, texto, umbral=0.5)
+                    has_j2 = similitud_nombres(j2_nombre, texto, umbral=0.5)
+                    
+                    if has_j1 and has_j2:
+                        partido_encontrado = partido
+                        break
+                
+                if not partido_encontrado:
+                    return {
+                        "error": f"❌ Partido {j1_nombre} vs {j2_nombre} no encontrado",
+                        "victoria": {}, "180s": {}, "mas_180s": {}, 
+                        "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+                    }
+                
+                # Estructura base de cuotas
+                cuotas = {
+                    "victoria": {"j1": None, "j2": None},
+                    "180s": {
+                        "j1_05": None,
+                        "j1_15": None,
+                        "j2_05": None,
+                        "j2_15": None,
+                        "ambos_05": None,
+                        "ambos_15": None,
+                        "ambos_25": None,
+                    },
+                    "mas_180s": {"j1": None, "j2": None, "empate": None},
+                    "handi_j1": {
+                        "minus_15": None,
+                        "plus_15": None,
+                        "minus_25": None,
+                        "plus_25": None,
+                    },
+                    "handi_j2": {
+                        "minus_15": None,
+                        "plus_15": None,
+                        "minus_25": None,
+                        "plus_25": None,
+                    },
+                    "total_legs": {"over": None, "under": None},
+                    "error": None
+                }
+                
+                # Buscar elementos de cuota dentro del partido
+                # Ajustar selectores según estructura real de Winamax
+                cuota_elementos = partido_encontrado.find_all(
+                    ["span", "button", "div"], 
+                    attrs={"class": lambda x: x and any(k in str(x).lower() for k in ["odd", "cuota", "cota", "bet"])},
+                    limit=50
+                )
+                
+                # Si no encuentra por clase, buscar por contenido numérico
+                if not cuota_elementos:
+                    cuota_elementos = partido_encontrado.find_all(
+                        ["span", "button", "div"],
+                        limit=100
+                    )
+                
+                # Extraer cuotas (estructura simplificada)
+                for elemento in cuota_elementos:
+                    texto = elemento.get_text().strip()
+                    try:
+                        cuota = float(texto.replace(",", "."))
+                        if 1.01 <= cuota <= 100:  # Rango válido de cuota
+                            # Aquí iría lógica para identificar el mercado
+                            # Por ahora dejar estructura lista
+                            pass
+                    except ValueError:
+                        pass
+                
+                browser.close()
+                
+                return cuotas
             
             except Exception as e:
-                await browser.close()
-                return None
-    
-    try:
-        # Ejecutar scraping asincrónico
-        html = asyncio.run(scrape())
-        
-        if not html:
-            return {
-                "error": "❌ No se pudo acceder a Winamax",
-                "victoria": {}, "180s": {}, "mas_180s": {}, 
-                "handi_j1": {}, "handi_j2": {}, "total_legs": {}
-            }
-        
-        # Parsear HTML (usar BeautifulSoup)
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "html.parser")
-        
-        # Buscar partido con fuzzy matching
-        partidos = soup.find_all("div", attrs={"data-testid": lambda x: x and "match" in str(x)})
-        
-        partido_encontrado = None
-        for partido in partidos:
-            texto_partido = partido.get_text()
-            
-            # Verificar si ambos nombres están en el partido
-            if similitud_nombres(j1_nombre, texto_partido) and similitud_nombres(j2_nombre, texto_partido):
-                partido_encontrado = partido
-                break
-        
-        if not partido_encontrado:
-            return {
-                "error": "❌ Partido no encontrado en Winamax",
-                "victoria": {}, "180s": {}, "mas_180s": {}, 
-                "handi_j1": {}, "handi_j2": {}, "total_legs": {}
-            }
-        
-        # Extraer cuotas (estructura simplificada - adaptar según HTML real)
-        cuotas = {
-            "victoria": {"j1": None, "j2": None},
-            "180s": {"j1": None, "j2": None, "empate": None},
-            "mas_180s": {"j1": None, "j2": None, "empate": None},
-            "handi_j1_minus_1_5": None,
-            "handi_j1_plus_1_5": None,
-            "handi_j1_minus_2_5": None,
-            "handi_j1_plus_2_5": None,
-            "handi_j2_minus_1_5": None,
-            "handi_j2_plus_1_5": None,
-            "handi_j2_minus_2_5": None,
-            "handi_j2_plus_2_5": None,
-            "total_legs_over": None,
-            "total_legs_under": None,
-            "error": None
-        }
-        
-        # Buscar elementos de cuota (ajustar selectores según estructura real de Winamax)
-        cuota_elementos = partido_encontrado.find_all("span", attrs={"class": lambda x: x and "odd" in str(x).lower()})
-        
-        for elemento in cuota_elementos:
-            texto = elemento.get_text().strip()
-            try:
-                cuota = float(texto)
-                
-                # Identificar tipo de mercado por contexto (esto requiere análisis más detallado del HTML)
-                # Por ahora, dejar estructura lista para llenar manualmente
-                
-            except ValueError:
-                pass
-        
-        return cuotas
+                browser.close()
+                return {
+                    "error": f"❌ Error durante scraping: {str(e)[:50]}",
+                    "victoria": {}, "180s": {}, "mas_180s": {}, 
+                    "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+                }
     
     except Exception as e:
         return {
-            "error": f"❌ Error: {str(e)}",
+            "error": f"❌ Error: {str(e)[:50]}",
             "victoria": {}, "180s": {}, "mas_180s": {}, 
             "handi_j1": {}, "handi_j2": {}, "total_legs": {}
         }
@@ -1411,9 +1463,22 @@ def render_value_bets():
         
         # Ambos
         st.markdown("##### 🤝 Ambos Jugadores")
-        col_a, col_b = st.columns(2)
+        col_a, col_b, col_c = st.columns(3)
         
         with col_a:
+            st.markdown("**Ambos +0.5 180s**")
+            cuota_justa = prob_a_cuota(m180["Ambos +0.5"])
+            mostrar_cuota_justa(cuota_justa)
+            c = st.number_input(f"Tu cuota", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_ambos_05", label_visibility="collapsed", placeholder="Introduce cuota")
+            st.caption(f"{m180['Ambos +0.5']*100:.1f}% probabilidad")
+            if c and c > 0:
+                y = calcular_yield(m180["Ambos +0.5"], c)
+                yield_color = "🟢" if y > 0 else ("🔴" if y < -0.05 else "⚪")
+                st.metric("Yield", f"{yield_color} {'+' if y > 0 else ''}{y*100:.1f}%")
+                if y > 0:
+                    value_bets_list.append({"Mercado": "Ambos +0.5 180s", "Probabilidad": m180["Ambos +0.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
+        
+        with col_b:
             st.markdown("**Ambos +1.5 180s**")
             cuota_justa = prob_a_cuota(m180["Ambos +1.5"])
             mostrar_cuota_justa(cuota_justa)
@@ -1426,7 +1491,7 @@ def render_value_bets():
                 if y > 0:
                     value_bets_list.append({"Mercado": "Ambos +1.5 180s", "Probabilidad": m180["Ambos +1.5"], "Cuota Justa": cuota_justa, "Cuota Bookie": c, "Yield": y})
         
-        with col_b:
+        with col_c:
             st.markdown("**Ambos +2.5 180s**")
             cuota_justa = prob_a_cuota(m180["Ambos +2.5"])
             mostrar_cuota_justa(cuota_justa)
