@@ -322,6 +322,7 @@ def cargar_jugadores_desde(pestana: str):
         col_pr      = buscar_col(["puntuación global", "puntuacion global", "global", "power"])
         col_180     = buscar_col(["180"])
         col_legs    = buscar_col(["legs", "leg"])
+        col_promedio_dardos = buscar_col(["promedio puntos", "average", "promedio dardos", "ppd", "media puntos"])
         col_checkouts = buscar_col(["checkout"])
         col_pct_vic = buscar_col(["porcentaje victoria", "% victoria", "% victoria", "%victoria"])
 
@@ -333,11 +334,13 @@ def cargar_jugadores_desde(pestana: str):
             pr       = safe_float(fila.get(col_pr,    0)) if col_pr    else 0.0
             lam_180  = safe_float(fila.get(col_180,   0)) if col_180   else 0.0
             lam_legs = safe_float(fila.get(col_legs,  0)) if col_legs  else 0.0
+            promedio_dardos = safe_float(fila.get(col_promedio_dardos, 0)) if col_promedio_dardos else 0.0
             checkouts = safe_float(str(fila.get(col_checkouts, 0)).replace("%", "")) if col_checkouts else 0.0
             pct_vic = safe_float(str(fila.get(col_pct_vic, 0)).replace("%", "")) if col_pct_vic else 0.0
             jugadores[nombre.lower()] = {
                 "nombre_original": nombre,
                 "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs,
+                "promedio_dardos": promedio_dardos,
                 "checkouts": checkouts, "pct_victorias": pct_vic
             }
         return jugadores
