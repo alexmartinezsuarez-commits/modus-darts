@@ -389,6 +389,7 @@ def get_proxima_jornada():
     # Si no hay más jornadas esta semana, devolver la primera de la próxima
     return jornadas_orden[0][0], jornadas_orden[0][1]
 
+def obtener_bandera(nombre_jugador):
     """Obtiene el emoji de bandera del jugador."""
     nombre_lower = nombre_jugador.lower().strip().replace("_", " ")
     codigo_pais = JUGADORES_PAISES.get(nombre_lower, None)
