@@ -241,7 +241,7 @@ def cargar_jugadores_desde(pestana: str):
                 for nombre, s in stats.items():
                     pr       = safe_float(_buscar_stat(s, ["global", "puntuación", "puntuacion"]))
                     lam_180  = safe_float(_buscar_stat(s, ["180", "ciento"]))
-                    lam_legs = safe_float(_buscar_stat(s, ["leg"]))
+                    lam_legs = safe_float(_buscar_stat(s, ["legs por partido", "promedio legs", "leg por partido"]))
                     jugadores[nombre.lower()] = {
                         "nombre_original": nombre,
                         "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs
