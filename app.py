@@ -657,44 +657,49 @@ def render_bloques_jugador(j_nombre, mercados_lista, color="#1f77b4"):
             )
             render_bloque_mercado(titulo, prob, cuota_justa, cuota_input, f"{j_nombre}_{idx}")
 
-def render_mas_180s_barras(j1_nombre, p_j1_mas, j2_nombre, p_j2_mas, p_empate, j1_color="#1f77b4", j2_color="#ff7f0e"):
+def mostrar_cuota_justa(cuota):
+    """Muestra la cuota justa de forma pequeña y discreta."""
+    st.caption(f"💡 Cuota justa: **{cuota:.2f}**")
+
+def render_mas_180s_barras(j1_nombre, p_j1, j2_nombre, p_j2, p_emp, j1_color="#1f77b4", j2_color="#ff7f0e"):
     """Renderiza barras para 'quién hace más 180s' con empate en el centro."""
-    # Calcular porcentajes
-    total = p_j1_mas + p_emp + p_j2_mas
-    if total == 0:
-        p_j1_mas = p_emp = p_j2_mas = 1/3
+    # Validar probabilidades
+    p_j1 = sanitize_prob(p_j1)
+    p_j2 = sanitize_prob(p_j2)
+    p_emp = sanitize_prob(p_emp)
     
-    pct_j1 = (p_j1_mas / total * 100)
+    total = p_j1 + p_emp + p_j2
+    if total <= 0:
+        total = 1.0
+    
+    pct_j1 = (p_j1 / total * 100)
     pct_emp = (p_emp / total * 100)
-    pct_j2 = (p_j2_mas / total * 100)
+    pct_j2 = (p_j2 / total * 100)
     
     html_str = f"""
-    <div style="margin: 30px 0;">
+    <div style="margin: 20px 0;">
         <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
             <div style="flex: 0 0 20%; text-align: right;">
-                <p style="margin: 0; font-weight: bold; font-size: 1em; color: {j1_color};">{j1_nombre}</p>
-                <p style="margin: 5px 0 0 0; font-size: 1.2em; font-weight: bold; color: {j1_color};">{pct_j1:.1f}%</p>
+                <p style="margin: 0; font-weight: bold; font-size: 0.95em; color: {j1_color};">{j1_nombre}</p>
+                <p style="margin: 5px 0 0 0; font-size: 1.1em; font-weight: bold; color: {j1_color};">{pct_j1:.1f}%</p>
             </div>
             <div style="flex: 1;">
-                <div style="display: flex; height: 50px; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div style="display: flex; height: 45px; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                     <div style="width: {pct_j1}%; background: linear-gradient(90deg, {j1_color}, {j1_color}dd); display: flex; align-items: center; justify-content: flex-end; padding-right: 8px;">
-                        <span style="color: white; font-weight: bold; font-size: 0.85em;">{p_j1_mas*100:.1f}%</span>
+                        <span style="color: white; font-weight: bold; font-size: 0.8em;">{p_j1*100:.1f}%</span>
                     </div>
                     <div style="width: {pct_emp}%; background: linear-gradient(90deg, #999, #777); display: flex; align-items: center; justify-content: center;">
-                        <span style="color: white; font-weight: bold; font-size: 0.85em;">{p_emp*100:.1f}%</span>
+                        <span style="color: white; font-weight: bold; font-size: 0.8em;">{p_emp*100:.1f}%</span>
                     </div>
                     <div style="width: {pct_j2}%; background: linear-gradient(90deg, {j2_color}dd, {j2_color}); display: flex; align-items: center; justify-content: flex-start; padding-left: 8px;">
-                        <span style="color: white; font-weight: bold; font-size: 0.85em;">{p_j2_mas*100:.1f}%</span>
+                        <span style="color: white; font-weight: bold; font-size: 0.8em;">{p_j2*100:.1f}%</span>
                     </div>
                 </div>
             </div>
             <div style="flex: 0 0 20%; text-align: left;">
-                <p style="margin: 0; font-weight: bold; font-size: 1em; color: {j2_color};">{j2_nombre}</p>
-                <p style="margin: 5px 0 0 0; font-size: 1.2em; font-weight: bold; color: {j2_color};">{pct_j2:.1f}%</p>
+                <p style="margin: 0; font-weight: bold; font-size: 0.95em; color: {j2_color};">{j2_nombre}</p>
+                <p style="margin: 5px 0 0 0; font-size: 1.1em; font-weight: bold; color: {j2_color};">{pct_j2:.1f}%</p>
             </div>
-        </div>
-        <div style="text-align: center; margin-top: 10px;">
-            <p style="margin: 0; font-size: 0.85em; color: #666; font-weight: 600;">Empate: {p_emp*100:.1f}%</p>
         </div>
     </div>
     """
@@ -912,7 +917,7 @@ def render_value_bets():
         with col_v1:
             st.markdown(f"**🎯 Gana {j1['nombre_original']}**")
             cuota_justa = prob_a_cuota(v1)
-            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            mostrar_cuota_justa(cuota_justa)
             c1 = st.number_input(
                 f"Tu cuota",
                 min_value=1.01, max_value=50.0, value=None, step=0.05,
@@ -930,7 +935,7 @@ def render_value_bets():
         with col_v2:
             st.markdown(f"**🎯 Gana {j2['nombre_original']}**")
             cuota_justa = prob_a_cuota(v2)
-            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            mostrar_cuota_justa(cuota_justa)
             c2 = st.number_input(
                 f"Tu cuota",
                 min_value=1.01, max_value=50.0, value=None, step=0.05,
@@ -956,7 +961,7 @@ def render_value_bets():
         with col_a:
             st.markdown("**+0.5 180s** (Al menos 1 180)")
             cuota_justa = prob_a_cuota(m180["J1 +0.5"])
-            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            mostrar_cuota_justa(cuota_justa)
             c = st.number_input(f"Tu cuota", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_j1_05", label_visibility="collapsed", placeholder="Introduce cuota")
             st.caption(f"{m180['J1 +0.5']*100:.1f}% probabilidad")
             if c and c > 0:
@@ -969,7 +974,7 @@ def render_value_bets():
         with col_b:
             st.markdown("**+1.5 180s** (Al menos 2 180s)")
             cuota_justa = prob_a_cuota(m180["J1 +1.5"])
-            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            mostrar_cuota_justa(cuota_justa)
             c = st.number_input(f"Tu cuota", min_value=1.01, max_value=50.0, value=None, step=0.05, key=f"180_j1_15", label_visibility="collapsed", placeholder="Introduce cuota")
             st.caption(f"{m180['J1 +1.5']*100:.1f}% probabilidad")
             if c and c > 0:
@@ -1052,7 +1057,7 @@ def render_value_bets():
         with col_m1:
             st.markdown(f"**{j1['nombre_original']}**")
             cuota_justa = prob_a_cuota(p_j1_mas)
-            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            mostrar_cuota_justa(cuota_justa)
             c = st.number_input(f"Tu cuota {j1['nombre_original']}", min_value=1.01, max_value=50.0, value=None, step=0.05, key="mas_j1", label_visibility="collapsed", placeholder="Introduce cuota")
             st.caption(f"{p_j1_mas*100:.1f}% probabilidad")
             if c and c > 0:
@@ -1065,7 +1070,7 @@ def render_value_bets():
         with col_m2:
             st.markdown("**Empate**")
             cuota_justa = prob_a_cuota(p_emp)
-            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            mostrar_cuota_justa(cuota_justa)
             c = st.number_input(f"Tu cuota empate", min_value=1.01, max_value=50.0, value=None, step=0.05, key="mas_emp", label_visibility="collapsed", placeholder="Introduce cuota")
             st.caption(f"{p_emp*100:.1f}% probabilidad")
             if c and c > 0:
@@ -1078,7 +1083,7 @@ def render_value_bets():
         with col_m3:
             st.markdown(f"**{j2['nombre_original']}**")
             cuota_justa = prob_a_cuota(p_j2_mas)
-            st.info(f"Cuota justa: **{cuota_justa:.2f}**")
+            mostrar_cuota_justa(cuota_justa)
             c = st.number_input(f"Tu cuota {j2['nombre_original']}", min_value=1.01, max_value=50.0, value=None, step=0.05, key="mas_j2", label_visibility="collapsed", placeholder="Introduce cuota")
             st.caption(f"{p_j2_mas*100:.1f}% probabilidad")
             if c and c > 0:
