@@ -242,9 +242,12 @@ def cargar_jugadores_desde(pestana: str):
                     pr       = safe_float(_buscar_stat(s, ["global", "puntuación", "puntuacion"]))
                     lam_180  = safe_float(_buscar_stat(s, ["180", "ciento"]))
                     lam_legs = safe_float(_buscar_stat(s, ["legs por partido", "promedio legs", "leg por partido"]))
+                    checkouts = safe_float(str(_buscar_stat(s, ["checkout"])).replace("%", ""))
+                    pct_vic = safe_float(str(_buscar_stat(s, ["porcentaje victoria", "% victoria"])).replace("%", ""))
                     jugadores[nombre.lower()] = {
                         "nombre_original": nombre,
-                        "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs
+                        "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs,
+                        "checkouts": checkouts, "pct_victorias": pct_vic
                     }
                 return jugadores
             return {}
@@ -264,6 +267,8 @@ def cargar_jugadores_desde(pestana: str):
         col_pr      = buscar_col(["puntuación global", "puntuacion global", "global", "power"])
         col_180     = buscar_col(["180"])
         col_legs    = buscar_col(["legs", "leg"])
+        col_checkouts = buscar_col(["checkout"])
+        col_pct_vic = buscar_col(["porcentaje victoria", "% victoria", "porcentaje"])
 
         jugadores = {}
         for _, fila in data.iterrows():
@@ -273,9 +278,12 @@ def cargar_jugadores_desde(pestana: str):
             pr       = safe_float(fila.get(col_pr,    0)) if col_pr    else 0.0
             lam_180  = safe_float(fila.get(col_180,   0)) if col_180   else 0.0
             lam_legs = safe_float(fila.get(col_legs,  0)) if col_legs  else 0.0
+            checkouts = safe_float(str(fila.get(col_checkouts, 0)).replace("%", "")) if col_checkouts else 0.0
+            pct_vic = safe_float(str(fila.get(col_pct_vic, 0)).replace("%", "")) if col_pct_vic else 0.0
             jugadores[nombre.lower()] = {
                 "nombre_original": nombre,
-                "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs
+                "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs,
+                "checkouts": checkouts, "pct_victorias": pct_vic
             }
         return jugadores
     except Exception as e:
@@ -522,7 +530,7 @@ def buscar_jugador(nombre, db):
 # WIDGETS VISUALES
 # ═══════════════════════════════════════════════════════════════
 
-def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, stats_extras=None):
+def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, jugador_data=None):
     """Tarjeta visual del jugador con stats."""
     color = "#1f77b4" if is_left else "#ff7f0e"
     
@@ -533,12 +541,9 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, stats_extras=No
     checkouts_prom = 0
     pct_victorias = 0
     
-    if stats_extras:
-        for k, v in stats_extras.items():
-            if "checkout" in k.lower() and "%" in str(v):
-                checkouts_prom = safe_float(str(v).replace("%", ""))
-            elif "porcentaje victoria" in k.lower() or "% victoria" in k.lower():
-                pct_victorias = safe_float(str(v).replace("%", ""))
+    if jugador_data:
+        checkouts_prom = jugador_data.get("checkouts", 0)
+        pct_victorias = jugador_data.get("pct_victorias", 0)
     
     col1, col2 = st.columns([1, 1])
     
@@ -829,7 +834,7 @@ def render_value_bets():
     col_j1, col_vs, col_j2 = st.columns([10, 2, 10])
     
     with col_j1:
-        tarjeta_jugador(j1['nombre_original'], pr1, lam1, legs1, is_left=True, stats_extras=j1)
+        tarjeta_jugador(j1['nombre_original'], pr1, lam1, legs1, is_left=True, jugador_data=j1)
     
     with col_vs:
         st.markdown("""
@@ -849,7 +854,7 @@ def render_value_bets():
         """, unsafe_allow_html=True)
     
     with col_j2:
-        tarjeta_jugador(j2['nombre_original'], pr2, lam2, legs2, is_left=False, stats_extras=j2)
+        tarjeta_jugador(j2['nombre_original'], pr2, lam2, legs2, is_left=False, jugador_data=j2)
 
     st.markdown("---")
     st.markdown("### 🔥 Head to Head Semanal")
