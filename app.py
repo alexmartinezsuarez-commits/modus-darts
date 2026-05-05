@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from scipy.stats import poisson
 from datetime import datetime
+from difflib import SequenceMatcher
+import asyncio
 
 st.set_page_config(page_title="Modus Super Series App", layout="wide", page_icon="🎯")
 
@@ -398,6 +400,170 @@ def obtener_bandera(nombre_jugador):
         return BANDERAS[codigo_pais]
     
     return None
+
+def similitud_nombres(nombre1, nombre2, umbral=0.6):
+    """
+    Compara dos nombres con fuzzy matching.
+    Retorna True si la similitud es mayor al umbral.
+    """
+    nombre1_lower = nombre1.lower().strip()
+    nombre2_lower = nombre2.lower().strip()
+    
+    # Elimintar espacios y puntos para comparación más flexible
+    nombre1_clean = nombre1_lower.replace(" ", "").replace(".", "")
+    nombre2_clean = nombre2_lower.replace(" ", "").replace(".", "")
+    
+    similitud = SequenceMatcher(None, nombre1_clean, nombre2_clean).ratio()
+    
+    # También probar comparando iniciales y apellidos
+    if " " in nombre1_lower and " " in nombre2_lower:
+        partes1 = nombre1_lower.split()
+        partes2 = nombre2_lower.split()
+        
+        # Si la primera letra coincide y el apellido es similar
+        if partes1[0][0] == partes2[0][0] and SequenceMatcher(None, partes1[-1], partes2[-1]).ratio() > 0.8:
+            return True
+    
+    return similitud >= umbral
+
+@st.cache_data(ttl=300, show_spinner=False)
+def obtener_cuotas_winamax(j1_nombre, j2_nombre):
+    """
+    Obtiene cuotas de Winamax para un partido MODUS.
+    Usa Playwright + stealth para evitar bloqueos.
+    
+    Retorna dict con estructura:
+    {
+        "victoria": {"j1": 1.50, "j2": 2.10},
+        "180s": {"j1": 1.80, "j2": 2.00, "empate": 3.50},
+        "mas_180s": {"j1": 1.50, "j2": 2.10, "empate": 3.00},
+        "handi_j1_minus_1_5": 1.80,
+        "handi_j1_plus_1_5": 1.90,
+        ... (más hándicaps)
+        "total_legs_over": 1.90,
+        "total_legs_under": 1.90,
+        "error": None o mensaje de error
+    }
+    """
+    
+    try:
+        from playwright.async_api import async_playwright
+        from playwright_stealth import stealth_async
+    except ImportError:
+        return {
+            "error": "⚠️ Instala: pip install playwright playwright-stealth",
+            "victoria": {}, "180s": {}, "mas_180s": {}, 
+            "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+        }
+    
+    async def scrape():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            
+            # Aplicar stealth
+            await stealth_async(page)
+            
+            try:
+                # Navegar a MODUS Super Series en Winamax
+                await page.goto("https://www.winamax.es/apuestas", timeout=30000)
+                await page.wait_for_load_state("networkidle")
+                
+                # Buscar sección de Dardos
+                await page.click("text=Dardos", timeout=10000)
+                await page.wait_for_load_state("networkidle")
+                
+                # Buscar MODUS Super Series
+                await page.click("text=MODUS", timeout=10000)
+                await page.wait_for_load_state("networkidle")
+                
+                # Esperar a que carguen los partidos
+                await page.wait_for_selector("[data-testid*='match']", timeout=15000)
+                
+                # Obtener HTML de la página
+                html = await page.content()
+                
+                await browser.close()
+                return html
+            
+            except Exception as e:
+                await browser.close()
+                return None
+    
+    try:
+        # Ejecutar scraping asincrónico
+        html = asyncio.run(scrape())
+        
+        if not html:
+            return {
+                "error": "❌ No se pudo acceder a Winamax",
+                "victoria": {}, "180s": {}, "mas_180s": {}, 
+                "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+            }
+        
+        # Parsear HTML (usar BeautifulSoup)
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        
+        # Buscar partido con fuzzy matching
+        partidos = soup.find_all("div", attrs={"data-testid": lambda x: x and "match" in str(x)})
+        
+        partido_encontrado = None
+        for partido in partidos:
+            texto_partido = partido.get_text()
+            
+            # Verificar si ambos nombres están en el partido
+            if similitud_nombres(j1_nombre, texto_partido) and similitud_nombres(j2_nombre, texto_partido):
+                partido_encontrado = partido
+                break
+        
+        if not partido_encontrado:
+            return {
+                "error": "❌ Partido no encontrado en Winamax",
+                "victoria": {}, "180s": {}, "mas_180s": {}, 
+                "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+            }
+        
+        # Extraer cuotas (estructura simplificada - adaptar según HTML real)
+        cuotas = {
+            "victoria": {"j1": None, "j2": None},
+            "180s": {"j1": None, "j2": None, "empate": None},
+            "mas_180s": {"j1": None, "j2": None, "empate": None},
+            "handi_j1_minus_1_5": None,
+            "handi_j1_plus_1_5": None,
+            "handi_j1_minus_2_5": None,
+            "handi_j1_plus_2_5": None,
+            "handi_j2_minus_1_5": None,
+            "handi_j2_plus_1_5": None,
+            "handi_j2_minus_2_5": None,
+            "handi_j2_plus_2_5": None,
+            "total_legs_over": None,
+            "total_legs_under": None,
+            "error": None
+        }
+        
+        # Buscar elementos de cuota (ajustar selectores según estructura real de Winamax)
+        cuota_elementos = partido_encontrado.find_all("span", attrs={"class": lambda x: x and "odd" in str(x).lower()})
+        
+        for elemento in cuota_elementos:
+            texto = elemento.get_text().strip()
+            try:
+                cuota = float(texto)
+                
+                # Identificar tipo de mercado por contexto (esto requiere análisis más detallado del HTML)
+                # Por ahora, dejar estructura lista para llenar manualmente
+                
+            except ValueError:
+                pass
+        
+        return cuotas
+    
+    except Exception as e:
+        return {
+            "error": f"❌ Error: {str(e)}",
+            "victoria": {}, "180s": {}, "mas_180s": {}, 
+            "handi_j1": {}, "handi_j2": {}, "total_legs": {}
+        }
 
 def calcular_tendencia(valor_actual, valor_anterior):
     """Calcula la tendencia comparando valor actual con anterior."""
@@ -1018,8 +1184,20 @@ def render_value_bets():
     
     with col3:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔢 Calcular Probabilidades", type="primary", use_container_width=True):
-            st.session_state.vb_calcular = True
+        col3_1, col3_2 = st.columns([1, 1])
+        with col3_1:
+            if st.button("🔢 Calcular", type="primary", use_container_width=True, help="Calcular probabilidades"):
+                st.session_state.vb_calcular = True
+        with col3_2:
+            if st.button("🌐 Winamax", help="Obtener cuotas de Winamax"):
+                with st.spinner("🔄 Obteniendo cuotas de Winamax..."):
+                    cuotas = obtener_cuotas_winamax(j1_sel, j2_sel)
+                    if cuotas.get("error"):
+                        st.warning(cuotas["error"])
+                    else:
+                        st.session_state.cuotas_winamax = cuotas
+                        st.success("✅ Cuotas cargadas desde Winamax")
+                        st.rerun()
 
     if not st.session_state.vb_calcular:
         st.info("👆 Selecciona los jugadores y pulsa **Calcular**")
