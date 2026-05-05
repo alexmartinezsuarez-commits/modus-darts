@@ -1792,15 +1792,15 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### ⚙️ Ejecutar Script")
 
 # ✅ TU URL DE GOOGLE APPS SCRIPT
-SCRIPT_URL = "https://script.google.com/macros/d/AKfycbwNQnY-jfmOGZSN0D1cNPFyijkNtrzWSBzUs0mByzQl0mCDRvhn6MOMInDZ9yXw0cf9/usercontent"
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwNQnY-jfmOGZSN0D1cNPFyijkNtrzWSBzUs0mByzQl0mCDRvhn6MOMInDZ9yXw0cf9/exec"
 
 if st.sidebar.button("▶️ Ejecutar Actualización", type="primary", use_container_width=True, help="Ejecuta el script de actualización de datos"):
     
     st.sidebar.info("🔄 Ejecutando script...")
     
     try:
-        # Llamar al script vía HTTP POST
-        response = requests.post(SCRIPT_URL, timeout=120)
+        # Llamar al script vía HTTP GET
+        response = requests.get(SCRIPT_URL, timeout=120)
         
         if response.status_code == 200:
             st.sidebar.success("✅ Script ejecutado correctamente")
