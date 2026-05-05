@@ -1,4 +1,4 @@
-import subprocess
+      import subprocess
 import sys
 import os
 
@@ -260,10 +260,8 @@ def extraer_stats_resumen_semanal(df):
                 header_idx += 1
             
             if stats:
-                jugadores[nombre.lower()] = {
-                    "nombre_original": nombre,
-                    **stats
-                }
+                # No incluir "nombre_original" en stats
+                jugadores[nombre.lower()] = stats
         
         return jugadores
     except Exception as e:
@@ -280,15 +278,31 @@ def cargar_todo(url, opcion, cortes):
             # Usar función específica para Resumen Semanal
             stats = extraer_stats_resumen_semanal(df)
             
-            # Crear DataFrame para mostrar
+            # Crear DataFrame para mostrar con orden personalizado
             df_list = []
-            for nombre, stat_dict in stats.items():
-                fila = {"Jugador": stat_dict.get("nombre_original", nombre)}
-                # Agregar stats excepto el nombre original
+            for nombre_lower, stat_dict in stats.items():
+                fila = {"Jugador": nombre_lower}
+                
+                # Orden específico: otros datos primero, Puntuación Global último
+                orden_columnas = [
+                    "legs por partido", "media 180 por partida", "promedio puntos",
+                    "diferencia legs", "promedio checkouts", "número victorias",
+                    "número derrotas", "porcentaje victoria"
+                ]
+                
+                # Agregar en orden
+                for col in orden_columnas:
+                    for k, v in stat_dict.items():
+                        if col in k.lower():
+                            fila[k] = v
+                
+                # Agregar Puntuación Global al final (lo último)
                 for k, v in stat_dict.items():
-                    if k != "nombre_original":
+                    if "puntuación" in k.lower() or "puntacion" in k.lower():
                         fila[k] = v
+                
                 df_list.append(fila)
+            
             df_display = pd.DataFrame(df_list) if df_list else pd.DataFrame()
             
             return df_display, stats
