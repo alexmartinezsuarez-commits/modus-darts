@@ -1240,15 +1240,17 @@ def render_value_bets():
             if st.button("🔢 Calcular", type="primary", use_container_width=True, help="Calcular probabilidades"):
                 st.session_state.vb_calcular = True
         with col3_2:
-            if st.button("🌐 Winamax", help="Obtener cuotas de Winamax"):
-                with st.spinner("🔄 Obteniendo cuotas de Winamax..."):
-                    cuotas = obtener_cuotas_winamax(j1_sel, j2_sel)
-                    if cuotas.get("error"):
-                        st.warning(cuotas["error"])
-                    else:
-                        st.session_state.cuotas_winamax = cuotas
-                        st.success("✅ Cuotas cargadas desde Winamax")
-                        st.rerun()
+            if st.button("🌐 Winamax", help="Obtener cuotas de Winamax (requiere Playwright)"):
+                try:
+                    with st.spinner("🔄 Obteniendo cuotas de Winamax..."):
+                        cuotas = obtener_cuotas_winamax(j1_sel, j2_sel)
+                        if cuotas.get("error"):
+                            st.info(f"ℹ️ {cuotas['error']}\n\n💡 **Solución:** Rellena las cuotas manualmente en los campos de entrada.")
+                        else:
+                            st.session_state.cuotas_winamax = cuotas
+                            st.success("✅ Cuotas cargadas desde Winamax")
+                except Exception as e:
+                    st.warning(f"⚠️ No se pudo conectar a Winamax: {str(e)[:50]}\n\n💡 **Rellena las cuotas manualmente en los campos de entrada.**")
 
     if not st.session_state.vb_calcular:
         st.info("👆 Selecciona los jugadores y pulsa **Calcular**")
