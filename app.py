@@ -1,4 +1,4 @@
-import subprocess
+ import subprocess
 import sys
 import os
 
@@ -200,11 +200,18 @@ def extraer_stats_diarias(df, fila_n, col_rango):
         for i, j in enumerate(jugadores):
             stats = {}
             curr_f = fila_n + 1
-            while curr_f + 1 < len(df) and curr_f < fila_n + 30:
+            while curr_f + 1 < len(df) and curr_f < fila_n + 35:  # Aumentado de 30 a 35 para Final Sábado
                 tit = str(df.iloc[curr_f, col_rango[0]]).strip()
+                
+                # Intentar obtener valor en fila N+1 o N+2 (para Final Sábado)
                 if tit != 'nan' and tit != '':
-                    val = str(df.iloc[curr_f + 1, col_rango[0] + i]).strip()
-                    stats[tit] = val
+                    val_fila1 = str(df.iloc[curr_f + 1, col_rango[0] + i]).strip() if curr_f + 1 < len(df) else 'nan'
+                    val_fila2 = str(df.iloc[curr_f + 2, col_rango[0] + i]).strip() if curr_f + 2 < len(df) else 'nan'
+                    
+                    # Usar valor de fila N+1 si existe, sino N+2 (para Final Sábado)
+                    val = val_fila1 if val_fila1 != 'nan' else val_fila2
+                    if val != 'nan' and val != '':
+                        stats[tit] = val
                 curr_f += 1
             data_final[j] = stats
         return data_final
@@ -219,7 +226,10 @@ def extraer_stats_resumen(df):
         if nombre_jugador not in ['nan', 'Jugador', '']:
             stats = {}
             for i in range(1, len(titulos)):
-                stats[titulos[i]] = fila[titulos[i]]
+                col_name = titulos[i]
+                # Normalizar nombres de columnas para búsqueda
+                col_name_norm = col_name.lower().strip()
+                stats[col_name_norm] = fila[titulos[i]]
             data_final[nombre_jugador] = stats
     return data_final
 
@@ -274,7 +284,7 @@ def cargar_jugadores_desde(pestana: str):
                     pr       = safe_float(_buscar_stat(s, ["global", "puntuación", "puntuacion"]))
                     lam_180  = safe_float(_buscar_stat(s, ["180", "ciento"]))
                     lam_legs = safe_float(_buscar_stat(s, ["legs por partido", "promedio legs", "leg por partido"]))
-                    promedio_dardos = safe_float(_buscar_stat(s, ["average", "promedio dardos", "ppd"]))
+                    promedio_dardos = safe_float(_buscar_stat(s, ["promedio puntos", "average", "promedio dardos", "ppd", "media puntos"]))
                     checkouts = safe_float(str(_buscar_stat(s, ["checkout"])).replace("%", ""))
                     pct_vic = safe_float(str(_buscar_stat(s, ["porcentaje victoria", "% victoria"])).replace("%", ""))
                     jugadores[nombre.lower()] = {
@@ -1895,4 +1905,4 @@ elif "📊 RESULTADOS Y ESTADÍSTICAS" in opcion_principal:
         if selected not in ["Resumen Semanal", "Value Bets"]:
             st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
         else:
-            st.dataframe(d1, use_container_width=True, hide_index=True)
+            st.dataframe(d1, use_container_width=True, hide_index=True)       
