@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from scipy.stats import poisson
 from datetime import datetime
-import plotly.graph_objects as go
 
 st.set_page_config(page_title="Modus Super Series App", layout="wide", page_icon="🎯")
 
@@ -532,55 +531,98 @@ def buscar_jugador(nombre, db):
 # ═══════════════════════════════════════════════════════════════
 
 def render_pentagon_habilidades(nombre, pr, lam_180, lam_legs, checkouts, pct_vic, color="#1f77b4"):
-    """Renderiza un pentágono de habilidades (radar chart) para un jugador."""
+    """Renderiza un pentágono de habilidades (radar chart) para un jugador con SVG."""
     
     # Normalizar datos a escala 0-100
-    # Power Ranking: 0-100 (ya está en esa escala)
-    # λ 180s: máximo ~2.5, escalar a 0-100
-    # λ Legs: máximo ~7, escalar a 0-100
-    # Checkouts %: ya está en porcentaje
-    # % Victorias: ya está en porcentaje
-    
     pr_norm = min(100, max(0, pr))
-    lam_180_norm = min(100, max(0, (lam_180 / 3.0) * 100))  # Máximo ~3
-    lam_legs_norm = min(100, max(0, (lam_legs / 7.5) * 100))  # Máximo ~7.5
+    lam_180_norm = min(100, max(0, (lam_180 / 3.0) * 100))
+    lam_legs_norm = min(100, max(0, (lam_legs / 7.5) * 100))
     checkouts_norm = min(100, max(0, checkouts))
     pct_vic_norm = min(100, max(0, pct_vic))
     
-    categories = ["Power Ranking", "λ 180s", "λ Legs", "Checkouts %", "% Victorias"]
     values = [pr_norm, lam_180_norm, lam_legs_norm, checkouts_norm, pct_vic_norm]
+    labels = ["Power\nRanking", "λ 180s", "λ Legs", "Checkouts", "Victorias"]
     
-    fig = go.Figure(data=go.Scatterpolar(
-        r=values,
-        theta=categories,
-        fill='toself',
-        name=nombre,
-        line=dict(color=color, width=2),
-        fillcolor=color + "33",  # Color con transparencia
-        hovertemplate='<b>%{theta}</b><br>%{r:.1f}<extra></extra>'
-    ))
+    # Calcular puntos del pentágono
+    center_x, center_y = 200, 200
+    radius = 150
+    angle_offset = -90  # Comenzar desde arriba
     
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100],
-                tickfont=dict(size=8),
-                gridcolor='rgba(200,200,200,0.3)'
-            ),
-            angularaxis=dict(
-                tickfont=dict(size=9)
-            ),
-            bgcolor='rgba(240,240,240,0.1)'
-        ),
-        showlegend=False,
-        margin=dict(l=40, r=40, t=40, b=40),
-        height=400,
-        font=dict(size=10, family="Arial, sans-serif"),
-        plot_bgcolor='white'
-    )
+    points = []
+    for i in range(5):
+        angle = angle_offset + (i * 72)  # 360/5 = 72 grados
+        rad = np.radians(angle)
+        x = center_x + radius * np.cos(rad)
+        y = center_y + radius * np.sin(rad)
+        points.append((x, y))
     
-    return fig
+    # Calcular puntos de datos (escala 0-100)
+    data_points = []
+    for i in range(5):
+        angle = angle_offset + (i * 72)
+        rad = np.radians(angle)
+        data_radius = (values[i] / 100) * radius
+        x = center_x + data_radius * np.cos(rad)
+        y = center_y + data_radius * np.sin(rad)
+        data_points.append((x, y))
+    
+    # Crear SVG
+    svg_parts = []
+    
+    # Encabezado SVG
+    svg_parts.append('<svg width="400" height="450" xmlns="http://www.w3.org/2000/svg">')
+    
+    # Fondo
+    svg_parts.append('<rect width="400" height="450" fill="white"/>')
+    
+    # Líneas de referencia (círculos concéntricos)
+    for r_pct in [20, 40, 60, 80, 100]:
+        r = (r_pct / 100) * radius
+        svg_parts.append(f'<circle cx="{center_x}" cy="{center_y}" r="{r}" fill="none" stroke="rgba(200,200,200,0.3)" stroke-width="1"/>')
+    
+    # Líneas desde centro a vértices
+    for point in points:
+        svg_parts.append(f'<line x1="{center_x}" y1="{center_y}" x2="{point[0]}" y2="{point[1]}" stroke="rgba(200,200,200,0.2)" stroke-width="1"/>')
+    
+    # Polígono del pentágono (referencia)
+    pentagon_path = "M " + " L ".join([f"{p[0]},{p[1]}" for p in points]) + " Z"
+    svg_parts.append(f'<path d="{pentagon_path}" fill="none" stroke="rgba(100,100,100,0.2)" stroke-width="1"/>')
+    
+    # Polígono de datos (relleno)
+    data_path = "M " + " L ".join([f"{p[0]},{p[1]}" for p in data_points]) + " Z"
+    rgb_color = color.lstrip('#')
+    rgb_tuple = tuple(int(rgb_color[i:i+2], 16) for i in (0, 2, 4))
+    svg_parts.append(f'<path d="{data_path}" fill="rgba({rgb_tuple[0]},{rgb_tuple[1]},{rgb_tuple[2]},0.2)" stroke="{color}" stroke-width="2"/>')
+    
+    # Puntos de datos
+    for point in data_points:
+        svg_parts.append(f'<circle cx="{point[0]}" cy="{point[1]}" r="4" fill="{color}" stroke="white" stroke-width="2"/>')
+    
+    # Etiquetas
+    label_positions = [
+        (center_x, center_y - radius - 30),  # Arriba
+        (center_x + radius * 0.9, center_y - radius * 0.3 - 20),  # Arriba derecha
+        (center_x + radius * 0.55, center_y + radius * 0.75 - 15),  # Abajo derecha
+        (center_x - radius * 0.55, center_y + radius * 0.75 - 15),  # Abajo izquierda
+        (center_x - radius * 0.9, center_y - radius * 0.3 - 20),  # Arriba izquierda
+    ]
+    
+    for i, (x, y) in enumerate(label_positions):
+        svg_parts.append(f'<text x="{x}" y="{y}" text-anchor="middle" font-size="11" font-family="Arial" fill="#333" font-weight="500">{labels[i]}</text>')
+    
+    # Valores en el centro de cada eje
+    for i, (x, y) in enumerate(data_points):
+        # Offset del valor hacia afuera
+        offset_x = (x - center_x) * 0.3
+        offset_y = (y - center_y) * 0.3
+        val_x = x + offset_x
+        val_y = y + offset_y
+        svg_parts.append(f'<text x="{val_x}" y="{val_y}" text-anchor="middle" font-size="9" font-family="Arial" fill="{color}" font-weight="bold">{values[i]:.0f}</text>')
+    
+    svg_parts.append('</svg>')
+    
+    svg_html = "\n".join(svg_parts)
+    st.markdown(svg_html, unsafe_allow_html=True)
 
 def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, jugador_data=None):
     """Tarjeta visual del jugador con pentágono de habilidades."""
@@ -596,8 +638,7 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, jugador_data=No
     st.markdown(f"<h3 style='color: {color}; text-align: center;'>{nombre_display}</h3>", unsafe_allow_html=True)
     
     # Renderizar pentágono
-    fig = render_pentagon_habilidades(nombre, pr, lam_180, lam_legs, checkouts_prom, pct_victorias, color)
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    render_pentagon_habilidades(nombre, pr, lam_180, lam_legs, checkouts_prom, pct_victorias, color)
     
     # Mostrar valores numéricos en pequeño
     col1, col2, col3 = st.columns(3)
