@@ -1,4 +1,4 @@
-import subprocess
+        import subprocess
 import sys
 import os
 
@@ -267,6 +267,87 @@ def extraer_stats_resumen_semanal(df):
         return jugadores
     except Exception as e:
         st.error(f"Error extrayendo Resumen Semanal: {e}")
+        return {}
+
+@st.cache_data(ttl=5)
+def cargar_jugadores_desde(pestana: str):
+    """Carga jugadores desde Google Sheets con stats"""
+    try:
+        url = URLS.get(pestana, "")
+        if not url:
+            return {}
+        
+        df = pd.read_csv(url, header=None)
+        st.session_state.last_update[pestana] = datetime.now()
+
+        fila_header = None
+        for i, row in df.iterrows():
+            if any(str(v).strip().lower() == "jugador" for v in row.values):
+                fila_header = i
+                break
+
+        if fila_header is None:
+            corte = CORTES.get(pestana, {})
+            if "der_nombres" in corte:
+                der_f  = corte["der_nombres"]
+                der_c  = corte["der_cols"]
+                stats  = extraer_stats_diarias(df, der_f, der_c)
+                jugadores = {}
+                for nombre, s in stats.items():
+                    pr       = safe_float(_buscar_stat(s, ["global", "puntuación", "puntuacion"]))
+                    lam_180  = safe_float(_buscar_stat(s, ["180", "ciento"]))
+                    lam_legs = safe_float(_buscar_stat(s, ["legs por partido", "promedio legs", "leg por partido"]))
+                    promedio_dardos = safe_float(_buscar_stat(s, ["promedio puntos", "average", "promedio dardos", "ppd", "media puntos"]))
+                    checkouts = safe_float(str(_buscar_stat(s, ["checkout"])).replace("%", ""))
+                    pct_vic = safe_float(str(_buscar_stat(s, ["porcentaje victoria", "% victoria"])).replace("%", ""))
+                    jugadores[nombre.lower()] = {
+                        "nombre_original": nombre,
+                        "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs,
+                        "promedio_dardos": promedio_dardos,
+                        "checkouts": checkouts, "pct_victorias": pct_vic
+                    }
+                return jugadores
+            return {}
+
+        headers = [str(v).strip() for v in df.iloc[fila_header].values]
+        data    = df.iloc[fila_header + 1:].copy()
+        data.columns = headers
+        data = data.reset_index(drop=True)
+
+        def buscar_col(keywords):
+            for h in headers:
+                if any(kw.lower() in h.lower() for kw in keywords):
+                    return h
+            return None
+
+        col_jugador = buscar_col(["jugador", "nombre"])
+        col_pr      = buscar_col(["puntuación global", "puntuacion global", "global", "power"])
+        col_180     = buscar_col(["180"])
+        col_legs    = buscar_col(["legs", "leg"])
+        col_promedio_dardos = buscar_col(["promedio puntos", "average", "promedio dardos", "ppd", "media puntos"])
+        col_checkouts = buscar_col(["checkout"])
+        col_pct_vic = buscar_col(["porcentaje victoria", "% victoria", "% victoria", "%victoria"])
+
+        jugadores = {}
+        for _, fila in data.iterrows():
+            nombre = str(fila.get(col_jugador, "")).strip() if col_jugador else ""
+            if not nombre or nombre.lower() in ["nan", "jugador", ""]:
+                continue
+            pr       = safe_float(fila.get(col_pr,    0)) if col_pr    else 0.0
+            lam_180  = safe_float(fila.get(col_180,   0)) if col_180   else 0.0
+            lam_legs = safe_float(fila.get(col_legs,  0)) if col_legs  else 0.0
+            promedio_dardos = safe_float(fila.get(col_promedio_dardos, 0)) if col_promedio_dardos else 0.0
+            checkouts = safe_float(str(fila.get(col_checkouts, 0)).replace("%", "")) if col_checkouts else 0.0
+            pct_vic = safe_float(str(fila.get(col_pct_vic, 0)).replace("%", "")) if col_pct_vic else 0.0
+            jugadores[nombre.lower()] = {
+                "nombre_original": nombre,
+                "PR": pr, "lam_180": lam_180, "lam_legs": lam_legs,
+                "promedio_dardos": promedio_dardos,
+                "checkouts": checkouts, "pct_victorias": pct_vic
+            }
+        return jugadores
+    except Exception as e:
+        st.error(f"Error cargando {pestana}: {e}")
         return {}
 
 @st.cache_data(ttl=5)  # 30 segundos
