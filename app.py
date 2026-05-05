@@ -461,6 +461,10 @@ def handicaps_legs(v1, v2):
     }
 
 def legs_totales(lam_legs1, lam_legs2):
+    """
+    Calcula probabilidades de total de legs usando MEDIA DE LEGS (lam_legs).
+    ✅ CORREGIDO: Usa media de legs en lugar de diferencia de legs.
+    """
     if lam_legs1 + lam_legs2 == 0:
         p = 0.5
     else:
@@ -554,7 +558,7 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True):
                 <p style="margin: 0; font-size: 2em; font-weight: bold; color: {color};">{lam_180:.2f}</p>
             </div>
             <div style="text-align: center; grid-column: 1 / -1;">
-                <p style="margin: 0 0 8px 0; font-size: 0.85em; color: #666; font-weight: 500;">λ Legs</p>
+                <p style="margin: 0 0 8px 0; font-size: 0.85em; color: #666; font-weight: 500;">λ Legs (Media)</p>
                 <p style="margin: 0; font-size: 2em; font-weight: bold; color: {color};">{lam_legs:.2f}</p>
             </div>
         </div>
@@ -815,7 +819,7 @@ def render_value_bets():
     
     with tab5:
         st.markdown("#### 📊 Total Legs (First to 4)")
-        st.caption("Basado en distribución binomial negativa — Under 5.5 = marcadores 4-0 y 4-1")
+        st.caption("Basado en distribución binomial negativa — Usa MEDIA DE LEGS para calcular probabilidades")
         c1 = widget_mercado_compacto("Más de 5.5 Legs", legs_total_dict["Más de 5.5"], "legs_mas")
         vb = procesar_mercado("Más de 5.5 Legs", legs_total_dict["Más de 5.5"], c1)
         if vb: value_bets_list.append(vb)
@@ -903,7 +907,7 @@ else:
         st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
 
     orden_diario = [
-        "Media 180 por partida", "Promedio puntos total", "Diferencia de legs",
+        "Media 180 por partida", "Promedio puntos total",
         "Legs por partido", "Promedio Checkouts", "Número victorias",
         "Número derrotas", "Porcentaje victoria", "PUNTIACIÓN GLOBAL (0-100)"
     ]
