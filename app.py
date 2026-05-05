@@ -640,20 +640,35 @@ def tarjeta_jugador(nombre, pr, lam_180, lam_legs, is_left=True, jugador_data=No
     # Renderizar pentágono
     render_pentagon_habilidades(nombre, pr, lam_180, lam_legs, checkouts_prom, pct_victorias, color)
     
-    # Mostrar valores numéricos grandes y visibles
+    # Mostrar valores numéricos centrados y visibles
     st.markdown("---")
-    col1, col2, col3 = st.columns(3)
     
-    with col1:
-        st.metric("Power Ranking", f"{pr:.1f}")
-        st.metric("λ 180s", f"{lam_180:.2f}")
-    
-    with col2:
-        st.metric("λ Legs", f"{lam_legs:.2f}")
-        st.metric("Checkouts", f"{checkouts_prom:.0f}%")
-    
-    with col3:
-        st.metric("% Victorias", f"{pct_victorias:.0f}%")
+    # Crear contenedor HTML centrado para los datos
+    html_metrics = f"""
+    <div style="text-align: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 30px; margin: 20px 0;">
+        <div>
+            <p style="font-size: 12px; color: #666; margin: 0;">Power Ranking</p>
+            <p style="font-size: 24px; font-weight: bold; color: {color}; margin: 5px 0;">{pr:.1f}</p>
+        </div>
+        <div>
+            <p style="font-size: 12px; color: #666; margin: 0;">λ 180s</p>
+            <p style="font-size: 24px; font-weight: bold; color: {color}; margin: 5px 0;">{lam_180:.2f}</p>
+        </div>
+        <div>
+            <p style="font-size: 12px; color: #666; margin: 0;">λ Legs</p>
+            <p style="font-size: 24px; font-weight: bold; color: {color}; margin: 5px 0;">{lam_legs:.2f}</p>
+        </div>
+        <div>
+            <p style="font-size: 12px; color: #666; margin: 0;">Checkouts</p>
+            <p style="font-size: 24px; font-weight: bold; color: {color}; margin: 5px 0;">{checkouts_prom:.0f}%</p>
+        </div>
+        <div>
+            <p style="font-size: 12px; color: #666; margin: 0;">% Victorias</p>
+            <p style="font-size: 24px; font-weight: bold; color: {color}; margin: 5px 0;">{pct_victorias:.0f}%</p>
+        </div>
+    </div>
+    """
+    st.markdown(html_metrics, unsafe_allow_html=True)
 
 def render_barras_enfrentadas(j1_nombre, j1_prob, j2_nombre, j2_prob, j1_color="#1f77b4", j2_color="#ff7f0e"):
     """Renderiza dos barras horizontales enfrentadas (tipo comparación)."""
