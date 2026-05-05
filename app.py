@@ -1468,7 +1468,7 @@ if st.sidebar.button("♻️ Forzar Refresh", help="Recarga inmediata"):
 # SECCIÓN LIVE
 # ─────────────────────────────────────────────
 if "🔴 LIVE" in opcion_principal:
-    st.title("🔴 TRANSMISIÓN EN VIVO")
+    st.title("🔴 LIVE")
     
     jornada_actual, url_actual, es_activa = get_jornada_actual()
     
@@ -1514,10 +1514,6 @@ if "🔴 LIVE" in opcion_principal:
         proxima, url_proxima = get_proxima_jornada()
         if proxima:
             st.info(f"📅 **Próxima jornada:** {proxima}")
-            
-            if st.button(f"Ver detalles de {proxima}"):
-                st.session_state.selected_jornada = proxima
-                st.rerun()
 
 # ─────────────────────────────────────────────
 # SECCIÓN VALUE BETS
@@ -1531,81 +1527,59 @@ elif "💰 VALUE BETS" in opcion_principal:
 elif "📊 RESULTADOS Y ESTADÍSTICAS" in opcion_principal:
     st.title("📊 RESULTADOS Y ESTADÍSTICAS")
     
-    # Sub-menú de jornadas
-    st.sidebar.markdown("### Selecciona Jornada:")
-    
-    jornadas_organizadas = {
-        "🟦 Grupo A (Mañana)": [
-            ("Grupo A Lunes", URLS["Grupo A Lunes"]),
-            ("Grupo A Martes", URLS["Grupo A Martes"]),
-            ("Grupo A Miércoles", URLS["Grupo A Miércoles"]),
-        ],
-        "🟨 Grupo C (Tarde)": [
-            ("Grupo C Jueves", URLS["Grupo C Jueves"]),
-            ("Grupo C Viernes", URLS["Grupo C Viernes"]),
-        ],
-        "🌙 Grupo B (Noche)": [
-            ("Grupo B Jueves", URLS["Grupo B Jueves"]),
-            ("Grupo B Viernes", URLS["Grupo B Viernes"]),
-        ],
-        "🏆 Final": [
-            ("Final Sábado", URLS["Final Sábado"]),
-        ],
-        "📋 Resumen": [
-            ("Resumen Semanal", URLS["Resumen Semanal"]),
-        ]
+    # Desplegable para seleccionar jornada
+    jornadas_dict = {
+        "Grupo A Lunes": URLS["Grupo A Lunes"],
+        "Grupo A Martes": URLS["Grupo A Martes"],
+        "Grupo A Miércoles": URLS["Grupo A Miércoles"],
+        "Grupo C Jueves": URLS["Grupo C Jueves"],
+        "Grupo C Viernes": URLS["Grupo C Viernes"],
+        "Grupo B Jueves": URLS["Grupo B Jueves"],
+        "Grupo B Viernes": URLS["Grupo B Viernes"],
+        "Final Sábado": URLS["Final Sábado"],
+        "Resumen Semanal": URLS["Resumen Semanal"],
     }
     
-    # Crear tabs para cada grupo
-    for grupo_nombre, jornadas in jornadas_organizadas.items():
-        with st.sidebar.expander(grupo_nombre):
-            for jornada_nombre, url in jornadas:
-                if st.sidebar.button(f"📍 {jornada_nombre}", key=f"btn_{jornada_nombre}"):
-                    st.session_state.selected_jornada = jornada_nombre
-                    st.session_state.selected_url = url
-                    st.rerun()
+    selected = st.selectbox("Selecciona una jornada:", list(jornadas_dict.keys()), key="jornada_select")
+    selected_url = jornadas_dict[selected]
     
-    # Mostrar jornada seleccionada
-    selected = st.session_state.get("selected_jornada", "Grupo A Lunes")
-    selected_url = st.session_state.get("selected_url", URLS.get("Grupo A Lunes"))
+    st.markdown("---")
     
-    if selected_url:
-        st.subheader(f"📊 {selected}")
-        
-        d1, d2 = cargar_todo(selected_url, selected, CORTES.get(selected, 2))
-        
-        if selected in st.session_state.last_update:
-            tiempo = (datetime.now() - st.session_state.last_update[selected]).seconds
-            st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
-        
-        orden_diario = [
-            "Media 180 por partida", "Promedio puntos total",
-            "Legs por partido", "Promedio Checkouts", "Número victorias",
-            "Número derrotas", "Porcentaje victoria", "PUNTIACIÓN GLOBAL (0-100)"
-        ]
-        
-        if d2 is not None:
-            st.subheader("📈 Estadísticas por Jugador")
-            for player, stats in d2.items():
-                bandera = obtener_bandera(player)
-                player_display = f"{bandera} {player}" if bandera else f"👤 {player}"
-                
-                with st.expander(player_display, expanded=False):
-                    if selected == "Resumen Semanal":
+    # Cargar y mostrar los datos
+    d1, d2 = cargar_todo(selected_url, selected, CORTES.get(selected, 2))
+    
+    if selected in st.session_state.last_update:
+        tiempo = (datetime.now() - st.session_state.last_update[selected]).seconds
+        st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
+    
+    orden_diario = [
+        "Media 180 por partida", "Promedio puntos total",
+        "Legs por partido", "Promedio Checkouts", "Número victorias",
+        "Número derrotas", "Porcentaje victoria", "PUNTIACIÓN GLOBAL (0-100)"
+    ]
+    
+    if d2 is not None:
+        st.subheader("📈 Estadísticas por Jugador")
+        for player, stats in d2.items():
+            bandera = obtener_bandera(player)
+            player_display = f"{bandera} {player}" if bandera else f"👤 {player}"
+            
+            with st.expander(player_display, expanded=False):
+                if selected == "Resumen Semanal":
+                    for k, v in stats.items():
+                        st.write(f"**{k}:** {v}")
+                else:
+                    for etiqueta in orden_diario:
+                        valor = "-"
                         for k, v in stats.items():
-                            st.write(f"**{k}:** {v}")
-                    else:
-                        for etiqueta in orden_diario:
-                            valor = "-"
-                            for k, v in stats.items():
-                                if etiqueta.lower() in k.lower():
-                                    valor = v
-                                    break
-                            st.write(f"**{etiqueta}:** {valor}")
-        
-        if d1 is not None:
-            st.subheader("⚔️ Detalles")
-            if selected not in ["Resumen Semanal", "Value Bets"]:
-                st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
-            else:
-                st.dataframe(d1, use_container_width=True, hide_index=True)
+                            if etiqueta.lower() in k.lower():
+                                valor = v
+                                break
+                        st.write(f"**{etiqueta}:** {valor}")
+    
+    if d1 is not None:
+        st.subheader("⚔️ Detalles")
+        if selected not in ["Resumen Semanal", "Value Bets"]:
+            st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
+        else:
+            st.dataframe(d1, use_container_width=True, hide_index=True)
