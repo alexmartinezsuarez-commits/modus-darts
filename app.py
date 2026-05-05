@@ -48,7 +48,7 @@ URLS = {
 }
 
 CORTES = {
-    "Resumen Semanal": {"filas": (5, 20), "cols": (1, 8)},
+    "Resumen Semanal": {"filas": (5, 20), "cols": (1, 10)},  # Columna E (índice 4) está incluida
     "Grupo A Lunes":      {"izq_filas": (5, 36), "izq_cols": (0, 5), "der_nombres": 5,  "der_cols": (6, 12)},
     "Grupo A Martes":     {"izq_filas": (5, 36), "izq_cols": (0, 5), "der_nombres": 5,  "der_cols": (6, 12)},
     "Grupo A Miércoles":  {"izq_filas": (5, 36), "izq_cols": (0, 5), "der_nombres": 5,  "der_cols": (6, 12)},
@@ -222,14 +222,25 @@ def extraer_stats_resumen(df):
     titulos = df.columns.tolist()
     data_final = {}
     for _, fila in df.iterrows():
-        nombre_jugador = str(fila[titulos[0]])
-        if nombre_jugador not in ['nan', 'Jugador', '']:
+        nombre_jugador = str(fila[titulos[0]]).strip() if len(titulos) > 0 else ""
+        
+        # Usar columna B si existe (índice 1) para el nombre
+        if len(titulos) > 1:
+            nombre_alt = str(fila[titulos[1]]).strip()
+            if nombre_alt not in ['nan', '=', '', 'Jugador']:
+                nombre_jugador = nombre_alt
+        
+        if nombre_jugador not in ['nan', 'Jugador', '=', '']:
             stats = {}
-            for i in range(1, len(titulos)):
-                col_name = titulos[i]
-                # Normalizar nombres de columnas para búsqueda
-                col_name_norm = col_name.lower().strip()
-                stats[col_name_norm] = fila[titulos[i]]
+            for i in range(len(titulos)):
+                col_name = str(titulos[i]).strip()
+                # Saltar columnas vacías o separadores
+                if col_name not in ['', '=', 'nan']:
+                    col_name_norm = col_name.lower().strip()
+                    val = fila[titulos[i]]
+                    # Solo agregar si el valor no es nan
+                    if str(val).strip() not in ['nan', '', '=']:
+                        stats[col_name_norm] = val
             data_final[nombre_jugador] = stats
     return data_final
 
