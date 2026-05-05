@@ -1510,11 +1510,43 @@ if "🔴 LIVE" in opcion_principal:
             st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
     
     else:
-        st.warning("⏸️ No hay partidos en juego ahora")
-        
+        # Mostrar próxima jornada disponible
         proxima, url_proxima = get_proxima_jornada()
-        if proxima:
-            st.info(f"📅 **Próxima jornada:** {proxima}")
+        
+        st.info(f"📅 **Próxima jornada:** {proxima}")
+        st.markdown("---")
+        
+        # Cargar y mostrar la próxima jornada automáticamente
+        d1, d2 = cargar_todo(url_proxima, proxima, CORTES.get(proxima, 2))
+        
+        if proxima in st.session_state.last_update:
+            tiempo = (datetime.now() - st.session_state.last_update[proxima]).seconds
+            st.caption(f"⏱️ Datos actualizados hace {tiempo} segundos")
+        
+        orden_diario = [
+            "Media 180 por partida", "Promedio puntos total",
+            "Legs por partido", "Promedio Checkouts", "Número victorias",
+            "Número derrotas", "Porcentaje victoria", "PUNTIACIÓN GLOBAL (0-100)"
+        ]
+        
+        if d2 is not None:
+            st.subheader("📈 Estadísticas")
+            for player, stats in d2.items():
+                bandera = obtener_bandera(player)
+                player_display = f"{bandera} {player}" if bandera else f"👤 {player}"
+                
+                with st.expander(player_display, expanded=False):
+                    for etiqueta in orden_diario:
+                        valor = "-"
+                        for k, v in stats.items():
+                            if etiqueta.lower() in k.lower():
+                                valor = v
+                                break
+                        st.write(f"**{etiqueta}:** {valor}")
+        
+        if d1 is not None:
+            st.subheader("⚔️ Partidos")
+            st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
 
 # ─────────────────────────────────────────────
 # SECCIÓN VALUE BETS
