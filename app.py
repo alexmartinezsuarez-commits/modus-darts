@@ -1,4 +1,4 @@
- import subprocess
+import subprocess
 import sys
 import os
 
@@ -1905,4 +1905,4 @@ elif "📊 RESULTADOS Y ESTADÍSTICAS" in opcion_principal:
         if selected not in ["Resumen Semanal", "Value Bets"]:
             st.dataframe(d1.style.apply(pintar_partidos, axis=1), use_container_width=True, hide_index=True)
         else:
-            st.dataframe(d1, use_container_width=True, hide_index=True)       
+            st.dataframe(d1, use_container_width=True, hide_index=True)
