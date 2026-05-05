@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import poisson
 from datetime import datetime
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Modus Super Series App", layout="wide", page_icon="🎯")
 
@@ -532,7 +533,6 @@ def buscar_jugador(nombre, db):
 
 def render_pentagon_habilidades(nombre, pr, lam_180, lam_legs, checkouts, pct_vic, color="#1f77b4"):
     """Renderiza un pentágono de habilidades (radar chart) para un jugador."""
-    import plotly.graph_objects as go
     
     # Normalizar datos a escala 0-100
     # Power Ranking: 0-100 (ya está en esa escala)
