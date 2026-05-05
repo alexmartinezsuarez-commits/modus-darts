@@ -1799,8 +1799,8 @@ if st.sidebar.button("▶️ Ejecutar Actualización", type="primary", use_conta
     st.sidebar.info("🔄 Ejecutando script...")
     
     try:
-        # Llamar al script vía HTTP GET
-        response = requests.get(SCRIPT_URL, timeout=120)
+        # Llamar al script vía HTTP POST
+        response = requests.post(SCRIPT_URL, timeout=120)
         
         if response.status_code == 200:
             st.sidebar.success("✅ Script ejecutado correctamente")
