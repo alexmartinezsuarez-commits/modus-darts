@@ -1,3 +1,6 @@
+// SCRIPT MINIMALISTA - Solo limpieza, sin obtener datos
+// La app Streamlit lee directamente de la API
+
 function crearTrigger() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
